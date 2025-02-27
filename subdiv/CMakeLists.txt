@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.2)
 
-set (CMAKE_C_COMPILER "D:/Coding/mingw64/bin/gcc.exe")
-set (CMAKE_CXX_COMPILER "D:/Coding/mingw64/bin/g++.exe")
-
 project(CCsubdiv)
 
 add_executable(${PROJECT_NAME} main.cpp)
