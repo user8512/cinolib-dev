@@ -10,8 +10,8 @@ int main(int argc, char **argv)
     std::string s = (argc==2) ? std::string(argv[1]) : "D:/Coding/cinolib/examples/data/rockerarm.mesh";
     Hexmesh<> m(s.c_str());
     subdivision_cc(m);
-    m.save("D:/Coding/cinolib/subdiv/test.mesh");
-    DrawableHexmesh<> dm("D:/Coding/cinolib/subdiv/test.mesh");
+    m.save("D:/Coding/cinolib/subdiv/reckerarm_subdivded.mesh");
+    DrawableHexmesh<> dm("D:/Coding/cinolib/subdiv/reckerarm_subdivded.mesh");
     GLcanvas gui;
     VolumeMeshControls<DrawableHexmesh<>> menu(&dm, &gui);
     gui.push(&dm);
