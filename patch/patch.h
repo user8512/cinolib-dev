@@ -14,10 +14,10 @@ namespace cinolib
 		class singlePatch {
 		public:
 			singlePatch() {};
-			singlePatch(std::vector<uint> polys, uint pSize, std::vector<vec3d> v_pos, std::vector<vec2d> ev, std::vector<int> fe,
-					std::vector<int> cf, std::vector<uint> ve, std::vector<int> ef, std::vector<int> fc):
-				polyGlobalIndex(std::move(polys)), patchSize(pSize), vertsPos(std::move(v_pos)), edgeVerts(std::move(ev)), faceEdges(std::move(fe)),
-					cellFaces(std::move(cf)), vertEdges(std::move(ve)), edgeFaces(std::move(ef)), faceCells(std::move(fc)){}
+			singlePatch(std::vector<uint> polys, uint pSize, std::vector<vec3d> v_pos, std::vector<vec2u> ev, std::vector<int> fe, std::vector<int> cf,
+					std::vector<int> ve, std::vector<int> ef, std::vector<int> fc, std::vector<uint> veoff, std::vector<uint> efoff, std::vector<uint> fpoff):
+				polyGlobalIndex(std::move(polys)), patchSize(pSize), vertsPos(std::move(v_pos)), edgeVerts(std::move(ev)), faceEdges(std::move(fe)), polyFaces(std::move(cf)),
+					vertEdges(std::move(ve)), edgeFaces(std::move(ef)), facePolys(std::move(fc)), vertEdgesOffset(std::move(veoff)), edgeFacesOffset(std::move(efoff)), facePolysOffset(std::move(fpoff)){}
 			~singlePatch() = default;
 
 		private:
@@ -27,12 +27,15 @@ namespace cinolib
 			std::vector<vec3d> vertsPos;
 
 			// patches and ribbons with localVerts index
-			std::vector<vec2d> edgeVerts;
+			std::vector<vec2u> edgeVerts;
 			std::vector<int> faceEdges;
-			std::vector<int> cellFaces;
-			std::vector<uint> vertEdges;
+			std::vector<int> polyFaces;
+			std::vector<int> vertEdges;
 			std::vector<int> edgeFaces;
-			std::vector<int> faceCells;
+			std::vector<int> facePolys; 
+			std::vector<uint> vertEdgesOffset;
+			std::vector<uint> edgeFacesOffset;
+			std::vector<uint> facePolysOffset;
 		};
 		
 		void patching(std::string patchLabelFileName, int num_clusters);
