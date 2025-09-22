@@ -10,8 +10,8 @@
 
 #define DEBUG
 #define OUTPUT
-#define DETAIL
-#define OUTPUT_DETAIL
+//#define DETAIL
+//#define OUTPUT_DETAIL
 
 namespace cinolib {
 	Patch::Patch() {
@@ -141,59 +141,63 @@ namespace cinolib {
 #ifdef DEBUG
 			std::cout << "current cluster: " << cluster << std::endl;
 			std::cout << "polys num: " << patchSize << std::endl;
-			std::cout << "ribbon size: " << polys.size() - patchSize << std::endl << std::endl;
+			std::cout << "ribbon size: " << polys.size() - patchSize << std::endl;
 #endif
 
 			//3. index of faces ordered by relevant cell
 			for (auto &pid : polys) {
-#ifdef DETAIL
-				std::cout << "poly: " << pid << " has faces: ";
-#endif
 				for (auto &fid : mesh.adj_p2f(pid)) {
 					if (std::find(faces.begin(), faces.end(), fid) == faces.end()) {
 						faceIdxGlobal2Local[fid] = faces.size();
 						faces.push_back(fid);
-#ifdef DETAIL
-						std::cout << fid << ", ";
-#endif
 					}
 				}
 			}
 
 			//4. index of edges ordered by relevant face
 			for (auto& fid : faces) {
-#ifdef DETAIL
-				std::cout << "face: " << fid << " has edges: ";
-#endif
 				for (auto& eid : mesh.adj_f2e(fid)) {
 					if (std::find(edges.begin(), edges.end(), eid) == edges.end()) {
 						edgeIdxGlobal2Local[eid] = edges.size();
 						edges.push_back(eid);
-#ifdef DETAIL
-						std::cout << eid << ", ";
-#endif
 					}
 				}
 			}
 
 			//5. index of verts ordered by relevant edge
 			for (auto& eid : edges) {
-#ifdef DETAIL
-				std::cout << "edge: " << eid << " has verts: ";
-#endif
 				for (auto& vid : mesh.adj_e2v(eid)) {
 					if (std::find(verts.begin(), verts.end(), vid) == verts.end()) {
 						vertIdxGlobal2Local[vid] = verts.size();
 						verts.push_back(vid);
 						v_pos.push_back(mesh.vert(vid));
-#ifdef DETAIL
-						std::cout << vid << ", ";
-#endif
 					}
 				}
 			}
 
 #ifdef DETAIL
+			/*
+			for (auto& pid : polys) {
+				std::cout << "\npoly: " << polyIdxGlobal2Local[pid] << " has faces: ";
+				for (auto& fid : mesh.adj_p2f(pid)) {
+						std::cout << faceIdxGlobal2Local[fid] << ", ";
+				}
+			}
+
+			for (auto& fid : faces) {
+				std::cout << "\nface: " << faceIdxGlobal2Local[fid] << " has edges: ";
+				for (auto& eid : mesh.adj_f2e(fid)) {
+					std::cout << edgeIdxGlobal2Local[eid] << ", ";
+				}
+			}
+
+			for (auto& eid : edges) {
+				std::cout << "\nedge: " << edgeIdxGlobal2Local[eid] << " has verts: ";
+				for (auto& vid : mesh.adj_e2v(eid)) {
+					std::cout << vertIdxGlobal2Local[vid] << ", ";
+				}
+			}
+			*/
 			std::cout << std::endl;
 			for (auto &vid : verts) {
 				uint idx = vertIdxGlobal2Local[vid];
@@ -223,7 +227,7 @@ namespace cinolib {
 			for (auto& pid : polys) {
 				uint idx = polyIdxGlobal2Local[pid];
 				std::cout << "local poly: " << idx << ", has faces: ";
-				for (auto& fid : mesh.adj_f2e(pid)) {
+				for (auto& fid : mesh.adj_p2f(pid)) {
 					std::cout << faceIdxGlobal2Local[fid] << ", ";
 				}
 				std::cout << "global idx: " << pid << std::endl;
@@ -393,9 +397,9 @@ namespace cinolib {
 };
 
 int main() {
-	cinolib::Patch patch("D:/data/test/mesh.mesh");
+	cinolib::Patch patch("D:/data/clustered_hexa/mesh.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching("D:/data/test/clustered_id.txt", 2);
+	patch.patching("D:/data/clustered_hexa/clustered_id.txt", 16);
 }
 
 
