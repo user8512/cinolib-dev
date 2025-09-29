@@ -7,10 +7,12 @@
 #include <vector>
 #include <cstdint>
 #include <iterator>
+#include <cinolib/gl/glcanvas.h>
 
+#define TEST
 #define DEBUG
 #define OUTPUT
-//#define DETAIL
+#define DETAIL
 //#define OUTPUT_DETAIL
 
 namespace cinolib {
@@ -22,6 +24,10 @@ namespace cinolib {
 	}
 
 	Patch::Patch(const std::vector<vec3d>& verts, const std::vector<std::vector<uint>>& polys) {
+		mesh = Hexmesh<>(verts, polys);
+	}
+
+	Patch::Patch(const std::vector<vec3d>& verts, const std::vector<uint>& polys) {
 		mesh = Hexmesh<>(verts, polys);
 	}
 
@@ -87,8 +93,11 @@ namespace cinolib {
 
 		// index of polys of patch and ribbon in order
 		std::vector<uint> polys;
-		// cells num of patch(no ribbon)
-		uint patchSize;
+		// items num of patch(no ribbon)
+		uint patchPolys;
+		uint patchFaces;
+		uint patchEdges;
+		uint patchVerts;
 		// pos of each vert
 		std::vector<vec3d> v_pos;
 
@@ -107,8 +116,15 @@ namespace cinolib {
 		std::vector<uint> edgeFacesOffset;
 		std::vector<uint> facePolysOffset;
 
+		std::vector<bool> vertOnSurf;
+		std::vector<bool> edgeOnSurf;
+		std::vector<bool> faceOnSurf;
+
 		for (int cluster = 0; cluster < num_clusters; cluster++) {
-			patchSize = 0;
+			patchPolys = 0;
+			patchFaces = 0;
+			patchEdges = 0;
+			patchVerts = 0;
 			patch.clear();
 			verts.clear();
 			edges.clear();
@@ -121,10 +137,10 @@ namespace cinolib {
 			//1. index of patch cells in increasing numerical order
 			for (int pid = 0; pid < patchLabel.size(); pid++) {
 				if (patchLabel[pid] == cluster) {
+					polyIdxGlobal2Local[pid] = polys.size();
 					patch.push_back(pid);
 					polys.push_back(pid);
-					patchSize++;
-					polyIdxGlobal2Local[pid] = polys.size() - 1;
+					patchPolys++;
 				}
 			}
 
@@ -132,24 +148,53 @@ namespace cinolib {
 			for (auto &pid : patch) {
 				for (auto &adj : mesh.adj_p2p(pid)) {
 					if (find(polys.begin(), polys.end(), adj) == polys.end()) {
+						polyIdxGlobal2Local[adj] = polys.size();
 						polys.push_back(adj);
-						polyIdxGlobal2Local[adj] = polys.size() - 1;
 					}
 				}
 			}
 
 #ifdef DEBUG
 			std::cout << "current cluster: " << cluster << std::endl;
-			std::cout << "polys num: " << patchSize << std::endl;
-			std::cout << "ribbon size: " << polys.size() - patchSize << std::endl;
+			std::cout << "polys num: " << patchPolys << std::endl;
+			std::cout << "ribbon size: " << polys.size() - patchPolys << std::endl;
 #endif
 
-			//3. index of faces ordered by relevant cell
+			//3. index of faces ordered by relevant cell(first scan to record items num of patch)
+			for (auto& pid : patch) {
+				for (auto& fid : mesh.adj_p2f(pid)) {
+					for (auto& eid : mesh.adj_f2e(fid)) {
+						for (auto& vid : mesh.adj_e2v(eid)) {
+							if (std::find(verts.begin(), verts.end(), vid) == verts.end()) {
+								vertIdxGlobal2Local[vid] = verts.size();
+								verts.push_back(vid);
+								v_pos.push_back(mesh.vert(vid));
+								patchVerts++;
+								vertOnSurf.push_back(mesh.vert_is_on_srf(vid));
+							}
+						}
+						if (std::find(edges.begin(), edges.end(), eid) == edges.end()) {
+							edgeIdxGlobal2Local[eid] = edges.size();
+							edges.push_back(eid);
+							patchEdges++;
+							edgeOnSurf.push_back(mesh.edge_is_on_srf(eid));
+						}
+					}
+					if (std::find(faces.begin(), faces.end(), fid) == faces.end()) {
+						faceIdxGlobal2Local[fid] = faces.size();
+						faces.push_back(fid);
+						patchFaces++;
+						faceOnSurf.push_back(mesh.face_is_on_srf(fid));
+					}
+				}
+			}
+
 			for (auto &pid : polys) {
 				for (auto &fid : mesh.adj_p2f(pid)) {
 					if (std::find(faces.begin(), faces.end(), fid) == faces.end()) {
 						faceIdxGlobal2Local[fid] = faces.size();
 						faces.push_back(fid);
+						faceOnSurf.push_back(mesh.face_is_on_srf(fid));
 					}
 				}
 			}
@@ -160,6 +205,7 @@ namespace cinolib {
 					if (std::find(edges.begin(), edges.end(), eid) == edges.end()) {
 						edgeIdxGlobal2Local[eid] = edges.size();
 						edges.push_back(eid);
+						edgeOnSurf.push_back(mesh.edge_is_on_srf(eid));
 					}
 				}
 			}
@@ -171,6 +217,7 @@ namespace cinolib {
 						vertIdxGlobal2Local[vid] = verts.size();
 						verts.push_back(vid);
 						v_pos.push_back(mesh.vert(vid));
+						vertOnSurf.push_back(mesh.vert_is_on_srf(vid));
 					}
 				}
 			}
@@ -233,6 +280,7 @@ namespace cinolib {
 				std::cout << "global idx: " << pid << std::endl;
 			}
 #endif
+
 			// build all top-down relations
 			for (auto& pid : polys) {
 				for (auto& fid : mesh.adj_p2f(pid)) {
@@ -261,12 +309,14 @@ namespace cinolib {
 			}
 
 			// build all down-top relations
-			vertEdgesOffset.reserve(verts.size());
-			edgeFacesOffset.reserve(edges.size());
-			facePolysOffset.reserve(faces.size());
+			vertEdgesOffset.reserve(verts.size() + 1);
+			edgeFacesOffset.reserve(edges.size() + 1);
+			facePolysOffset.reserve(faces.size() + 1);
 			
+			uint tempOffset = 0;
 			for (auto& vid : verts) {
-				vertEdgesOffset.push_back(mesh.adj_v2e(vid).size());
+				vertEdgesOffset.push_back(tempOffset);
+				tempOffset += mesh.adj_v2e(vid).size();
 				for (auto& eid : mesh.adj_v2e(vid)) {
 					if (vid == mesh.edge_vert_id(eid, 0)) {
 						vertEdges.push_back(edgeIdxGlobal2Local[eid]);
@@ -276,9 +326,12 @@ namespace cinolib {
 					}
 				}
 			}
+			vertEdgesOffset.push_back(tempOffset);
 
+			tempOffset = 0;
 			for (auto& eid : edges) {
-				edgeFacesOffset.push_back(mesh.adj_e2f(eid).size());
+				edgeFacesOffset.push_back(tempOffset);
+				tempOffset += mesh.adj_e2f(eid).size();
 				for (auto& fid : mesh.adj_e2f(eid)) {
 					if (getFaceEdgeSign(fid, eid)) {
 						edgeFaces.push_back(faceIdxGlobal2Local[fid]);
@@ -288,9 +341,12 @@ namespace cinolib {
 					}
 				}
 			}
+			edgeFacesOffset.push_back(tempOffset);
 
+			tempOffset = 0;
 			for (auto& fid : faces) {
-				facePolysOffset.push_back(mesh.adj_f2p(fid).size());
+				facePolysOffset.push_back(tempOffset);
+				tempOffset += mesh.adj_f2p(fid).size();
 				for (auto& pid : mesh.adj_f2p(fid)) {
 					if (getPolyFaceSign(pid, fid)) {
 						facePolys.push_back(polyIdxGlobal2Local[pid]);
@@ -300,16 +356,17 @@ namespace cinolib {
 					}
 				}
 			}
+			facePolysOffset.push_back(tempOffset);
 
 #ifdef OUTPUT
 			int pid = 0;
-			outfile << "cluster" << cluster << ", size: " << patchSize << std::endl;
-			for (; pid < patchSize; pid++) {
+			outfile << "cluster" << cluster << ", size: " << patchPolys << std::endl;
+			for (; pid < patchPolys; pid++) {
 				outfile << polys[pid] << '\n';
 			}
 			outfile << '\n';
 
-			outfile2 << "cluster" << cluster << ", size: " << polys.size() - patchSize << std::endl;
+			outfile2 << "cluster" << cluster << ", size: " << polys.size() - patchPolys << std::endl;
 			for (; pid < polys.size(); pid++) {
 				outfile2 << polys[pid] << '\n';
 			}
@@ -328,6 +385,7 @@ namespace cinolib {
 			}
 			outfile3 << '\n';
 
+			
 			for (auto& t : faceIdxGlobal2Local) {
 				outfile3 << "global face: " << t.first << ", local idx: " << t.second << '\n';
 			}
@@ -358,11 +416,13 @@ namespace cinolib {
 				outfile3 << polyFaces[tempIdx] << "  ";
 			}
 			outfile3 << '\n';
-			
+
 			tempIdx = 0;
 			int idx = 0;
-			for (auto offset : vertEdgesOffset) {
-				outfile3 << "\noffset of vert: " << idx++ << " is: " << offset << '\n';
+			uint offset = 0;
+			for (int ve = 0; ve < vertEdgesOffset.size() - 1; ve++) {
+				outfile3 << "\noffset of vert: " << idx++ << " is: " << vertEdgesOffset[ve] << '\n';
+				offset = vertEdgesOffset[ve + 1] - vertEdgesOffset[ve];
 				for (int i = 0; i < offset; i++) {
 					outfile3 << vertEdges[tempIdx++] << " ";
 				}
@@ -371,8 +431,9 @@ namespace cinolib {
 
 			tempIdx = 0;
 			idx = 0;
-			for (auto offset : edgeFacesOffset) {
-				outfile3 << "\noffset of edge: " << idx++ << " is: " << offset << '\n';
+			for (int ef = 0; ef < edgeFacesOffset.size() - 1; ef++) {
+				outfile3 << "\noffset of edge: " << idx++ << " is: " << edgeFacesOffset[ef] << '\n';
+				offset = edgeFacesOffset[ef + 1] - edgeFacesOffset[ef];
 				for (int i = 0; i < offset; i++) {
 					outfile3 << edgeFaces[tempIdx++] << " ";
 				}
@@ -381,8 +442,9 @@ namespace cinolib {
 
 			tempIdx = 0;
 			idx = 0;
-			for (auto offset : facePolysOffset) {
-				outfile3 << "\noffset of face: " << idx++ << " is: " << offset << '\n';
+			for (int fp = 0; fp < facePolysOffset.size() - 1; fp++) {
+				outfile3 << "\noffset of face: " << idx++ << " is: " << facePolysOffset[fp] << '\n';
+				offset = facePolysOffset[fp + 1] - facePolysOffset[fp];
 				for (int i = 0; i < offset; i++) {
 					outfile3 << facePolys[tempIdx++] << " ";
 				}
@@ -390,16 +452,604 @@ namespace cinolib {
 			outfile3 << '\n';
 #endif
 
-			patches.emplace_back(std::move(polys), patchSize, std::move(v_pos), std::move(edgeVerts), std::move(faceEdges), std::move(polyFaces),
-				std::move(vertEdges), std::move(edgeFaces), std::move(facePolys), std::move(vertEdgesOffset), std::move(edgeFacesOffset), std::move(facePolysOffset));
+			patches.emplace_back(std::move(polys), patchPolys, patchFaces, patchEdges, patchVerts, std::move(v_pos), std::move(edgeVerts), std::move(faceEdges), std::move(polyFaces),
+				std::move(vertEdges), std::move(edgeFaces), std::move(facePolys), std::move(vertEdgesOffset), std::move(edgeFacesOffset), std::move(facePolysOffset),
+				std::move(vertOnSurf), std::move(edgeOnSurf), std::move(faceOnSurf));
 		}
+	}
+
+	void Patch::subdiv() {
+		std::vector<vec3d> pos;
+		std::vector<uint> polys;
+		int temp = 0;
+		for (singlePatch patch : patches) {
+			std::cout << "subdiv patch: " << temp++ << std::endl;
+			patch.subdiv(pos, polys);
+		}
+		Hexmesh<> mesh2(pos, polys);
+		mesh2.save("output.mesh");
+		//for (auto& p : polys) {
+		//	std::cout << p << std::endl;
+		//}
+		//std::ofstream file("points.obj");
+		//if (!file.is_open()) {
+		//	std::cerr << "无法打开文件！" << std::endl;
+		//	return;
+		//}
+
+		//// 写顶点
+		//for (auto idx : polys) {
+		//	const auto& v = pos[idx];
+		//	file << "v " << v.x() << " " << v.y() << " " << v.z() << "\n";
+		//}
+		//file.close();
+		DrawableHexmesh<> newMesh(pos, polys);
+		GLcanvas gui;
+		gui.push(&newMesh);
+		gui.launch();
+	}
+
+	int count = 0;
+
+	void Patch::singlePatch::subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys) {
+#ifdef OUTPUT
+		std::ofstream outfile("D:/data/clustered_hexa/test/subdiv.txt", std::ios::app);
+		if (!outfile) {
+			std::cerr << "无法打开文件" << std::endl;
+		}
+#endif
+
+		int ne = edgeVerts.size();
+		int nf = faceEdges.size() / 4;
+		int np = polyFaces.size() / 6;
+
+		//新的几何点
+		std::vector<vec3d> newFaceVerts, newEdgeVerts, newVertVerts;
+
+		//各中点（中间量）
+		std::vector<vec3d> polyCentroids, faceCentroids, edgeCentroids;
+
+		polyCentroids.reserve(np);
+		faceCentroids.reserve(nf);
+		edgeCentroids.reserve(ne);
+
+		newFaceVerts.reserve(patchFaces);
+		newEdgeVerts.reserve(patchEdges);
+		newVertVerts.reserve(patchVerts);
+
+		std::vector<uint> tempVerts;
+
+		//求体的中点
+		for (int p = 0; p < np; p++) {
+			tempVerts.clear();
+			for (int faceOff = 0; faceOff < 6; faceOff++) {
+				int f = polyFaces[p * 6 + faceOff];
+				if (f < 0) {
+					f = -f - 1;
+				}
+				for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
+					int e = faceEdges[f * 4 + edgeOff];
+					if (e < 0) {
+						e = -e - 1;
+					}
+					auto start = edgeVerts[e].x();
+					auto end = edgeVerts[e].y();
+					if (find(tempVerts.begin(), tempVerts.end(), start) == tempVerts.end()) {
+						tempVerts.push_back(start);
+					}
+					if (find(tempVerts.begin(), tempVerts.end(), end) == tempVerts.end()) {
+						tempVerts.push_back(end);
+					}
+				}
+			}
+			vec3d PolyCentroid(0, 0, 0);
+			for (uint v : tempVerts) {
+				PolyCentroid += vertsPos[v];
+			}
+			PolyCentroid /= 8;
+			polyCentroids.push_back(PolyCentroid);
+		}
+
+		//求面的中点
+		for (int f = 0; f < nf; f++) {
+			tempVerts.clear();
+			for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
+				int e = faceEdges[f * 4 + edgeOff];
+				if (e < 0) {
+					e = -e - 1;
+				}
+				auto start = edgeVerts[e].x();
+				auto end = edgeVerts[e].y();
+				if (find(tempVerts.begin(), tempVerts.end(), start) == tempVerts.end()) {
+					tempVerts.push_back(start);
+				}
+				if (find(tempVerts.begin(), tempVerts.end(), end) == tempVerts.end()) {
+					tempVerts.push_back(end);
+				}
+			}
+			vec3d faceCentroid(0, 0, 0);
+			for (uint v : tempVerts) {
+				faceCentroid += vertsPos[v];
+			}
+			faceCentroid /= 4;
+			faceCentroids.push_back(faceCentroid);
+		}
+
+		//求边的中点
+		for (int e = 0; e < ne; e++) {
+			auto start = edgeVerts[e].x();
+			auto end = edgeVerts[e].y();
+			vec3d edgeCentroid(0, 0, 0);
+			edgeCentroid += vertsPos[start];
+			edgeCentroid += vertsPos[end];
+			edgeCentroid /= 2;
+			edgeCentroids.push_back(edgeCentroid);
+		}
+
+		//求新体点
+		std::vector<vec3d> newPolyVerts(polyCentroids.begin(), polyCentroids.begin() + patchPolys);
+
+		//求新面点
+		for (int f = 0; f < patchFaces; f++) {
+			if (!faceOnSurf[f]) {
+				uint offset = facePolysOffset[f];
+				int p0 = facePolys[offset];
+				if (p0 < 0) {
+					p0 = -p0 - 1;
+				}
+				int p1 = facePolys[offset + 1];
+				if (p1 < 0) {
+					p1 = -p1 - 1;
+				}
+				vec3d newFaceVert(0, 0, 0);
+				newFaceVert += polyCentroids[p0];
+				newFaceVert += polyCentroids[p1];
+				newFaceVert += (faceCentroids[f] * 2);
+				newFaceVert /= 4;
+				newFaceVerts.push_back(newFaceVert);
+			}
+			//边界面
+			else {
+				newFaceVerts.push_back(faceCentroids[f]);
+			}
+		}
+
+		//求新边点
+		std::vector<uint> tempFaces;
+		std::vector<uint> tempPolys;
+
+		for (int e = 0; e < patchEdges; e++) {
+			tempFaces.clear();
+			tempPolys.clear();
+			int N = edgeFacesOffset[e + 1] - edgeFacesOffset[e];
+			if (!edgeOnSurf[e]) {
+				for (int i = 0; i < N; i++) {
+					int face = edgeFaces[edgeFacesOffset[e] + i];
+					if (face < 0) {
+						face = -face - 1;
+					}
+					tempFaces.push_back(face);
+					int faceN = facePolysOffset[face + 1] - facePolysOffset[face];
+					for (int j = 0; j < faceN; j++) {
+						int poly = facePolys[facePolysOffset[face] + j];
+						if (poly < 0) {
+							poly = -poly - 1;
+						}
+						if (find(tempPolys.begin(), tempPolys.end(), poly) == tempPolys.end()) {
+							tempPolys.push_back(poly);
+						}
+					}
+				}
+				vec3d faceAvg(0, 0, 0);
+				for (auto& face : tempFaces) {
+					faceAvg += faceCentroids[face];
+				}
+				faceAvg /= tempFaces.size();
+				vec3d polyAvg(0, 0, 0);
+				for (auto& poly : tempPolys) {
+					polyAvg += polyCentroids[poly];
+				}
+				polyAvg /= tempPolys.size();
+				vec3d newEdgeVert(0, 0, 0);
+				newEdgeVert += polyAvg;
+				newEdgeVert += (faceAvg * 2);
+				newEdgeVert += (edgeCentroids[e] * (N - 3));
+				newEdgeVert /= N;
+				newEdgeVerts.push_back(newEdgeVert);
+			}
+			else {
+				vec3d faceAvg(0, 0, 0);
+				for (int i = 0; i < N; i++) {
+					int face = edgeFaces[edgeFacesOffset[e] + i];
+					if (face < 0) {
+						face = -face - 1;
+					}
+					if (faceOnSurf[face]) {
+						tempFaces.push_back(face);
+					}
+				}
+				for (auto& face : tempFaces) {
+					faceAvg += faceCentroids[face];
+				}
+				faceAvg /= tempFaces.size();
+				vec3d newEdgeVert(0, 0, 0);
+				newEdgeVert += faceAvg;
+				newEdgeVert += edgeCentroids[e];
+				newEdgeVert /= 2;
+				newEdgeVerts.push_back(newEdgeVert);
+			}
+		}
+
+		//求新点点
+		std::vector<uint> tempEdges;
+
+		for (int v = 0; v < patchVerts; v++) {
+			tempEdges.clear();
+			tempFaces.clear();
+			tempPolys.clear();
+			int N = vertEdgesOffset[v + 1] - vertEdgesOffset[v];
+			if (!vertOnSurf[v]) {
+				for (int i = 0; i < N; i++) {
+					int edge = vertEdges[vertEdgesOffset[v] + i];
+					if (edge < 0) {
+						edge = -edge - 1;
+					}
+					tempEdges.push_back(edge);
+					int edgeN = edgeFacesOffset[edge + 1] - edgeFacesOffset[edge];
+					for (int j = 0; j < edgeN; j++) {
+						int face = edgeFaces[edgeFacesOffset[edge] + j];
+						if (face < 0) {
+							face = -face - 1;
+						}
+						if (find(tempFaces.begin(), tempFaces.end(), face) == tempFaces.end()) {
+							tempFaces.push_back(face);
+							int faceN = facePolysOffset[face + 1] - facePolysOffset[face];
+							for (int k = 0; k < faceN; k++) {
+								int poly = facePolys[facePolysOffset[face] + k];
+								if (poly < 0) {
+									poly = -poly - 1;
+								}
+								if (find(tempPolys.begin(), tempPolys.end(), poly) == tempPolys.end()) {
+									tempPolys.push_back(poly);
+								}
+							}
+						}
+					}
+					vec3d edgeAvg(0, 0, 0);
+					for (auto& edge : tempEdges) {
+						edgeAvg += edgeCentroids[edge];
+					}
+					edgeAvg /= tempEdges.size();
+					vec3d faceAvg(0, 0, 0);
+					for (auto& face : tempFaces) {
+						faceAvg += faceCentroids[face];
+					}
+					faceAvg /= tempFaces.size();
+					vec3d polyAvg(0, 0, 0);
+					for (auto& poly : tempPolys) {
+						polyAvg += polyCentroids[poly];
+					}
+					polyAvg /= tempPolys.size();
+					vec3d newVertVert(0, 0, 0);
+					newVertVert += polyAvg;
+					newVertVert += (faceAvg * 3);
+					newVertVert += (edgeAvg * 3);
+					newVertVert += vertsPos[v];
+					newVertVert /= 8;
+					newVertVerts.push_back(newVertVert);
+				}
+			}
+			else {
+				vec3d edgeAvg(0, 0, 0);
+				vec3d faceAvg(0, 0, 0);
+				for (int i = 0; i < N; i++) {
+					int edge = vertEdges[vertEdgesOffset[v] + i];
+					if (edge < 0) {
+						edge = -edge - 1;
+					}
+					if (edgeOnSurf[edge]) {
+						tempEdges.push_back(edge);
+						int edgeN = edgeFacesOffset[edge + 1] - edgeFacesOffset[edge];
+						for (int j = 0; j < edgeN; j++) {
+							int face = edgeFaces[edgeFacesOffset[edge] + j];
+							if (face < 0) {
+								face = -face - 1;
+							}
+							if (faceOnSurf[face] && find(tempFaces.begin(), tempFaces.end(), face) == tempFaces.end()) {
+								tempFaces.push_back(face);
+							}
+						}
+					}
+				}
+				for (auto& edge : tempEdges) {
+					edgeAvg += edgeCentroids[edge];
+				}
+				edgeAvg /= tempEdges.size();
+				for (auto& face : tempFaces) {
+					faceAvg += faceCentroids[face];
+				}
+				faceAvg /= tempFaces.size();
+				int n = tempEdges.size();
+				vec3d newVertVert(0, 0, 0);
+				newVertVert += faceAvg;
+				newVertVert += (edgeAvg * 2);
+				newVertVert += (vertsPos[v] * (n - 3));
+				newVertVert /= n;
+				newVertVerts.push_back(newVertVert);
+			}
+		}
+
+#ifdef OUTPUT
+		outfile << "cluster: " << count++ << std::endl;
+		outfile << "new poly verts: " << std::endl;
+		for (auto& v : newPolyVerts) {
+			outfile << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
+		}
+		outfile << std::endl << "new face verts: " << std::endl;
+		for (auto& v : newFaceVerts) {
+			outfile << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
+		}
+		outfile << std::endl << "new edge verts: " << std::endl;
+		for (auto& v : newEdgeVerts) {
+			outfile << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
+		}
+		outfile << std::endl << "new vert verts: " << std::endl;
+		for (auto& v : newVertVerts) {
+			outfile << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
+		}
+#endif
+
+		uint pvOffset = pos.size();
+		uint fvOffset = pvOffset + newPolyVerts.size();
+		uint evOffset = fvOffset + newFaceVerts.size();
+		uint vvOffset = evOffset + newEdgeVerts.size();
+
+		for (auto& v : newPolyVerts) {
+			pos.push_back(v);
+		}
+		for (auto& v : newFaceVerts) {
+			pos.push_back(v);
+		}
+		for (auto& v : newEdgeVerts) {
+			pos.push_back(v);
+		}
+		for (auto& v : newVertVerts) {
+			pos.push_back(v);
+		}
+
+#ifdef DETAIL
+		std::cout << "pvOffset: " << pvOffset << ", fvOffset: " << fvOffset << ", evOffset: " << evOffset << ", vvOffset: " << vvOffset << std::endl;
+#endif
+
+		std::vector<uint> FV(6);
+		std::vector<uint> EV(12);
+		std::vector<uint> VV(8);
+		bool f1Reverse = false;
+		bool f2Reverse = false;
+		// 求所有新的体的拓扑
+		for (int p = 0; p < patchPolys; p++) {
+			// 1.找到两个相对的面
+			int f1, f2;
+			f1 = polyFaces[p * 6];
+			if (f1 < 0) {
+				f1 = -f1 - 1;
+				f1Reverse = true;
+			}
+			tempEdges.clear();
+			for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
+				int e = faceEdges[f1 * 4 + edgeOff];
+				if (e < 0) {
+					e = -e - 1;
+				}
+				tempEdges.push_back(e);
+			}
+
+			for (int faceOff = 1; faceOff < 6; faceOff++) {
+				bool fReverse = false;
+				bool flag = true;
+				int f = polyFaces[p * 6 + faceOff];
+				if (f < 0) {
+					f = -f - 1;
+					fReverse = true;
+				}
+				// 检测是否有重复边
+				for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
+					int e = faceEdges[f * 4 + edgeOff];
+					if (e < 0) {
+						e = -e - 1;
+					}
+					if (find(tempEdges.begin(), tempEdges.end(), e) != tempEdges.end()) {
+						flag = false;
+					}
+					else {
+
+					}
+				}
+				if (flag) {
+					f2 = f;
+					f2Reverse = fReverse;
+					break;
+				}
+			}
+			// f1,f2是相对的面，利用这两个面构建新的八个细分体
+
+			// 2.记录属于当前体的所有点边面
+			tempVerts.clear();
+			tempEdges.clear();
+			tempFaces.clear();
+			for (int faceOff = 0; faceOff < 6; faceOff++) {
+				int f = polyFaces[p * 6 + faceOff];
+				if (f < 0) {
+					f = -f - 1;
+				}
+				if (find(tempFaces.begin(), tempFaces.end(), f) == tempFaces.end()) {
+					tempFaces.push_back(f);
+				}
+				for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
+					int e = faceEdges[f * 4 + edgeOff];
+					if (e < 0) {
+						e = -e - 1;
+					}
+					if (find(tempEdges.begin(), tempEdges.end(), e) == tempEdges.end()) {
+						tempEdges.push_back(e);
+					}
+					auto start = edgeVerts[e].x();
+					auto end = edgeVerts[e].y();
+					if (find(tempVerts.begin(), tempVerts.end(), start) == tempVerts.end()) {
+						tempVerts.push_back(start);
+					}
+					if (find(tempVerts.begin(), tempVerts.end(), end) == tempVerts.end()) {
+						tempVerts.push_back(end);
+					}
+				}
+			}
+
+			// 3.对点边面进行排序
+			FV.clear();
+			EV.clear();
+			VV.clear();
+
+			bool edgeReverse = false;
+			int vStart, vCurrent;
+			int eCurrent = faceEdges[f1 * 4];
+			if (eCurrent < 0) {
+				eCurrent = -eCurrent - 1;
+				edgeReverse = true;
+			}
+
+			if (f1Reverse ^ edgeReverse) {
+				vStart = edgeVerts[eCurrent].y();
+				vCurrent = edgeVerts[eCurrent].x();
+				VV.push_back(vStart);
+				EV.push_back(eCurrent);
+			}
+			else {
+				vStart = edgeVerts[eCurrent].x();
+				vCurrent = edgeVerts[eCurrent].y();
+				VV.push_back(vStart);
+				EV.push_back(eCurrent);
+			}
+
+			while (vCurrent != vStart) {
+				VV.push_back(vCurrent);
+				for (int eOff = 1; eOff < 4; eOff++) {
+					edgeReverse = false;
+					eCurrent = faceEdges[f1 * 4 + eOff];
+					if (eCurrent < 0) {
+						eCurrent = -eCurrent - 1;
+						edgeReverse = true;
+					}
+					if (f1Reverse ^ edgeReverse && edgeVerts[eCurrent].y() == vCurrent) {
+						vCurrent = edgeVerts[eCurrent].x();
+						EV.push_back(eCurrent);
+						break;
+					}
+					else if (!(f1Reverse ^ edgeReverse) && edgeVerts[eCurrent].x() == vCurrent) {
+						vCurrent = edgeVerts[eCurrent].y();
+						EV.push_back(eCurrent);
+						break;
+					}
+				}
+			}
+			// f1的点和边已排序
+
+			for (int i = 0; i < 4; i++) {
+				vCurrent = VV[i];
+				for (auto& e : tempEdges) {
+					if (edgeVerts[e].x() == vCurrent && find(EV.begin(), EV.end(), e) == EV.end()) {
+						VV.push_back(edgeVerts[e].y());
+						EV.push_back(e);
+						break;
+					}
+					else if (edgeVerts[e].y() == vCurrent && find(EV.begin(), EV.end(), e) == EV.end()) {
+						VV.push_back(edgeVerts[e].x());
+						EV.push_back(e);
+						break;
+					}
+				}
+			}
+			// 全部点已排序,侧面边已排序
+
+			FV.push_back(f1);
+			FV.push_back(f2);
+
+			for (int i = 0; i < 4; i++) {
+				eCurrent = EV[i];
+				for (auto& f : tempFaces) {
+					if (find(FV.begin(), FV.end(), f) == FV.end()) {
+						for (int eOff = 0; eOff < 4; eOff++) {
+							int fe = faceEdges[f * 4 + eOff];
+							if (fe < 0) {
+								fe = -fe - 1;
+							}
+							if (fe == eCurrent) {
+								FV.push_back(f);
+								for (int eOff = 0; eOff < 4; eOff++) {
+									fe = faceEdges[f * 4 + eOff];
+									if (fe < 0) {
+										fe = -fe - 1;
+									}
+									if (find(EV.begin(), EV.end(), fe) == EV.end()) {
+										EV.push_back(fe);
+										break;
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+			}
+			// 全部面已排序,全部边已排序
+
+#ifdef DETAIL
+			for (auto i : FV)
+				std::cout << "FV: " << i << std::endl;
+			for (auto i : EV)
+				std::cout << "EV: " << i << std::endl;
+			for (auto i : VV)
+				std::cout << "VV: " << i << std::endl;
+#endif
+
+			uint PV = p + pvOffset;
+			for (int i = 0; i < FV.size(); i++) {
+				FV[i] += fvOffset;
+			}
+			for (int i = 0; i < EV.size(); i++) {
+				EV[i] += evOffset;
+			}
+			for (int i = 0; i < VV.size(); i++) {
+				VV[i] += vvOffset;
+			}
+
+			polys.insert(polys.end(), { VV[0], EV[0], FV[0], EV[3], EV[4], FV[2], PV, FV[5] });
+			polys.insert(polys.end(), { EV[0], VV[1], EV[1], FV[0], FV[2], EV[5], FV[3], PV });
+			polys.insert(polys.end(), { FV[0], EV[1], VV[2], EV[2], PV, FV[3], EV[6], FV[4] });
+			polys.insert(polys.end(), { EV[3], FV[0], EV[2], VV[3], FV[5], PV, FV[4], EV[7] });
+			polys.insert(polys.end(), { EV[4], FV[2], PV, FV[5], VV[4], EV[8], FV[1], EV[11] });
+			polys.insert(polys.end(), { FV[2], EV[5], FV[3], PV, EV[8], VV[5], EV[9], FV[1] });
+			polys.insert(polys.end(), { PV, FV[3], EV[6], FV[4], FV[1], EV[9], VV[6], EV[10] });
+			polys.insert(polys.end(), { FV[5], PV, FV[4], EV[7], EV[11], FV[1], EV[10], VV[7] });
+		}
+	}
+
+	void PrintVec3d(vec3d& v) {
+		std::cout << std::endl << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
 	}
 };
 
 int main() {
+#ifdef TEST
+	cinolib::Patch patch("D:/data/test/mesh.mesh");
+	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
+	patch.patching("D:/data/test/clustered_id.txt", 1);
+	patch.subdiv();
+#else
 	cinolib::Patch patch("D:/data/clustered_hexa/mesh.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching("D:/data/clustered_hexa/clustered_id.txt", 16);
+	patch.patching("D:/data/clustered_hexa/clustered_id.txt", 1);
+	patch.subdiv();
+#endif
 }
 
 

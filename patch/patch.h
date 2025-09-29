@@ -8,20 +8,28 @@ namespace cinolib
 	public:
 		Patch();
 		Patch(std::string meshFileName);
+		Patch(const std::vector<vec3d>& verts, const std::vector<uint>& polys);
 		Patch(const std::vector<vec3d>& verts, const std::vector<std::vector<uint>>& polys);
 		~Patch() = default;
 
 		class singlePatch {
 		public:
 			singlePatch() {};
-			singlePatch(std::vector<uint> polys, uint pSize, std::vector<vec3d> v_pos, std::vector<vec2u> ev, std::vector<int> fe, std::vector<int> cf,
-					std::vector<int> ve, std::vector<int> ef, std::vector<int> fc, std::vector<uint> veoff, std::vector<uint> efoff, std::vector<uint> fpoff):
-				polyGlobalIndex(std::move(polys)), patchSize(pSize), vertsPos(std::move(v_pos)), edgeVerts(std::move(ev)), faceEdges(std::move(fe)), polyFaces(std::move(cf)),
-					vertEdges(std::move(ve)), edgeFaces(std::move(ef)), facePolys(std::move(fc)), vertEdgesOffset(std::move(veoff)), edgeFacesOffset(std::move(efoff)), facePolysOffset(std::move(fpoff)){}
+			singlePatch(std::vector<uint> polys, uint pPolys, uint pFaces, uint pEdges, uint pVerts, std::vector<vec3d> v_pos, 
+					std::vector<vec2u> ev, std::vector<int> fe, std::vector<int> cf,std::vector<int> ve, std::vector<int> ef, std::vector<int> fc, 
+					std::vector<uint> veoff, std::vector<uint> efoff, std::vector<uint> fpoff, std::vector<bool> vos, std::vector<bool> eos, std::vector<bool> fos):
+				polyGlobalIndex(std::move(polys)), patchPolys(pPolys), patchFaces(pFaces), patchEdges(pEdges), patchVerts(pVerts), vertsPos(std::move(v_pos)),
+					edgeVerts(std::move(ev)), faceEdges(std::move(fe)), polyFaces(std::move(cf)), vertEdges(std::move(ve)), 
+					edgeFaces(std::move(ef)), facePolys(std::move(fc)), vertEdgesOffset(std::move(veoff)), edgeFacesOffset(std::move(efoff)), facePolysOffset(std::move(fpoff)),
+					vertOnSurf(std::move(vos)), edgeOnSurf(std::move(eos)), faceOnSurf(std::move(fos)){}
 			~singlePatch() = default;
+			void subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys);
 
 		private:
-			uint patchSize;
+			uint patchPolys;
+			uint patchFaces;
+			uint patchEdges;
+			uint patchVerts;
 			std::vector<uint> polyGlobalIndex;
 			std::vector<uint> vertGlobalIndex;
 			std::vector<vec3d> vertsPos;
@@ -36,9 +44,13 @@ namespace cinolib
 			std::vector<uint> vertEdgesOffset;
 			std::vector<uint> edgeFacesOffset;
 			std::vector<uint> facePolysOffset;
+			std::vector<bool> vertOnSurf;
+			std::vector<bool> edgeOnSurf;
+			std::vector<bool> faceOnSurf;
 		};
 		
 		void patching(std::string patchLabelFileName, int num_clusters);
+		void Patch::subdiv();
 		Hexmesh<> getMesh() { return mesh; }
 
 	private:
@@ -64,4 +76,6 @@ namespace cinolib
 			maxPatchSize = size;
 		}
 	};
+
+	void PrintVec3d(vec3d& v);
 }
