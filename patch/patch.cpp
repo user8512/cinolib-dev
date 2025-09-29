@@ -9,10 +9,10 @@
 #include <iterator>
 #include <cinolib/gl/glcanvas.h>
 
-#define TEST
+//#define TEST
 #define DEBUG
 #define OUTPUT
-#define DETAIL
+//#define DETAIL
 //#define OUTPUT_DETAIL
 
 namespace cinolib {
@@ -715,29 +715,29 @@ namespace cinolib {
 							}
 						}
 					}
-					vec3d edgeAvg(0, 0, 0);
-					for (auto& edge : tempEdges) {
-						edgeAvg += edgeCentroids[edge];
-					}
-					edgeAvg /= tempEdges.size();
-					vec3d faceAvg(0, 0, 0);
-					for (auto& face : tempFaces) {
-						faceAvg += faceCentroids[face];
-					}
-					faceAvg /= tempFaces.size();
-					vec3d polyAvg(0, 0, 0);
-					for (auto& poly : tempPolys) {
-						polyAvg += polyCentroids[poly];
-					}
-					polyAvg /= tempPolys.size();
-					vec3d newVertVert(0, 0, 0);
-					newVertVert += polyAvg;
-					newVertVert += (faceAvg * 3);
-					newVertVert += (edgeAvg * 3);
-					newVertVert += vertsPos[v];
-					newVertVert /= 8;
-					newVertVerts.push_back(newVertVert);
 				}
+				vec3d edgeAvg(0, 0, 0);
+				for (auto& edge : tempEdges) {
+					edgeAvg += edgeCentroids[edge];
+				}
+				edgeAvg /= tempEdges.size();
+				vec3d faceAvg(0, 0, 0);
+				for (auto& face : tempFaces) {
+					faceAvg += faceCentroids[face];
+				}
+				faceAvg /= tempFaces.size();
+				vec3d polyAvg(0, 0, 0);
+				for (auto& poly : tempPolys) {
+					polyAvg += polyCentroids[poly];
+				}
+				polyAvg /= tempPolys.size();
+				vec3d newVertVert(0, 0, 0);
+				newVertVert += polyAvg;
+				newVertVert += (faceAvg * 3);
+				newVertVert += (edgeAvg * 3);
+				newVertVert += vertsPos[v];
+				newVertVert /= 8;
+				newVertVerts.push_back(newVertVert);
 			}
 			else {
 				vec3d edgeAvg(0, 0, 0);
@@ -1047,7 +1047,7 @@ int main() {
 #else
 	cinolib::Patch patch("D:/data/clustered_hexa/mesh.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching("D:/data/clustered_hexa/clustered_id.txt", 1);
+	patch.patching("D:/data/clustered_hexa/clustered_id.txt", 16);
 	patch.subdiv();
 #endif
 }
