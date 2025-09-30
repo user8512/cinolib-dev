@@ -10,6 +10,7 @@
 #include <cinolib/gl/glcanvas.h>
 
 //#define TEST
+//#define DRAW
 #define DEBUG
 #define OUTPUT
 //#define DETAIL
@@ -145,9 +146,20 @@ namespace cinolib {
 			}
 
 			//2. index of ribbon cells ordered by adjacent patch cell
-			for (auto &pid : patch) {
-				for (auto &adj : mesh.adj_p2p(pid)) {
-					if (find(polys.begin(), polys.end(), adj) == polys.end()) {
+			std::vector<uint> ring1;
+			for (auto& pid : patch) {
+				for (auto& adj : mesh.adj_p2p(pid)) {
+					if (polyIdxGlobal2Local.find(adj) == polyIdxGlobal2Local.end()) {
+						polyIdxGlobal2Local[adj] = polys.size();
+						polys.push_back(adj);
+						ring1.push_back(adj);
+					}
+				}
+			}
+			// 从 1-ring 扩到 2-ring
+			for (auto& pid : ring1) {
+				for (auto& adj : mesh.adj_p2p(pid)) {
+					if (polyIdxGlobal2Local.find(adj) == polyIdxGlobal2Local.end()) {
 						polyIdxGlobal2Local[adj] = polys.size();
 						polys.push_back(adj);
 					}
@@ -466,27 +478,11 @@ namespace cinolib {
 			std::cout << "subdiv patch: " << temp++ << std::endl;
 			patch.subdiv(pos, polys);
 		}
-		Hexmesh<> mesh2(pos, polys);
-		mesh2.save("output.mesh");
-		//for (auto& p : polys) {
-		//	std::cout << p << std::endl;
-		//}
-		//std::ofstream file("points.obj");
-		//if (!file.is_open()) {
-		//	std::cerr << "无法打开文件！" << std::endl;
-		//	return;
-		//}
-
-		//// 写顶点
-		//for (auto idx : polys) {
-		//	const auto& v = pos[idx];
-		//	file << "v " << v.x() << " " << v.y() << " " << v.z() << "\n";
-		//}
-		//file.close();
 		DrawableHexmesh<> newMesh(pos, polys);
 		GLcanvas gui;
 		gui.push(&newMesh);
 		gui.launch();
+		newMesh.save("D:/data/clustered_hexa/result.mesh");
 	}
 
 	int count = 0;
@@ -1039,16 +1035,23 @@ namespace cinolib {
 };
 
 int main() {
-#ifdef TEST
-	cinolib::Patch patch("D:/data/test/mesh.mesh");
-	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching("D:/data/test/clustered_id.txt", 1);
-	patch.subdiv();
+#ifdef DRAW
+	cinolib::DrawableHexmesh<> newMesh("D:/data/clustered_hexa/fixed_mesh.mesh");
+	cinolib::GLcanvas gui;
+	gui.push(&newMesh);
+	gui.launch();
 #else
-	cinolib::Patch patch("D:/data/clustered_hexa/mesh.mesh");
-	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching("D:/data/clustered_hexa/clustered_id.txt", 16);
-	patch.subdiv();
+	#ifdef TEST
+		cinolib::Patch patch("D:/data/test/mesh.mesh");
+		std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
+		patch.patching("D:/data/test/clustered_id.txt", 8);
+		patch.subdiv();
+	#else
+		cinolib::Patch patch("D:/data/clustered_hexa/mesh.mesh");
+		std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
+		patch.patching("D:/data/clustered_hexa/clustered_id.txt", 16);
+		patch.subdiv();
+	#endif
 #endif
 }
 
