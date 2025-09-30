@@ -50,7 +50,10 @@ namespace cinolib
 		};
 		
 		void patching(std::string root, std::string patchLabelFileName, int num_clusters);
-		void Patch::subdiv(std::string root);
+		void Patch::subdiv(std::string root, int subdiv_times);
+
+		// 用于各块操作后，合并容差范围内的点
+		void deduplicate_points_and_remap_hex(std::vector<vec3d>& points, std::vector<uint>& hex_idx, double tol);
 		Hexmesh<> getMesh() { return mesh; }
 
 	private:
@@ -59,6 +62,7 @@ namespace cinolib
 
 		bool getFaceEdgeSign(uint eid, uint fid);
 		bool getPolyFaceSign(uint fid, uint pid);
+
 	};
 
 	inline void PrintVec3d(vec3d& v);

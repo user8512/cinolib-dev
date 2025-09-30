@@ -8,17 +8,22 @@
 #include <cstdint>
 #include <iterator>
 #include <cinolib/gl/glcanvas.h>
+#include <unordered_map>
+#include <tuple>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <functional>
 
 //#define TEST
-//#define DRAW
+#define DRAW
 //#define DEBUG
 #define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
 namespace cinolib {
-	Patch::Patch() {
-	}
+	Patch::Patch() {}
 
 	Patch::Patch(std::string fileName) {
 		mesh.load(fileName.c_str());
@@ -44,6 +49,83 @@ namespace cinolib {
 
 	bool Patch::getPolyFaceSign(uint pid, uint fid) {
 		return mesh.poly_face_is_CCW(pid, fid);
+	}
+
+	struct Array3LLHash {
+		std::size_t operator()(const std::array<long long, 3>& a) const noexcept {
+			auto h0 = std::hash<long long>{}(a[0]);
+			auto h1 = std::hash<long long>{}(a[1]);
+			auto h2 = std::hash<long long>{}(a[2]);
+			// 64-bit 混合
+			h0 ^= h1 + 0x9e3779b97f4a7c15ULL + (h0 << 6) + (h0 >> 2);
+			h0 ^= h2 + 0x9e3779b97f4a7c15ULL + (h0 << 6) + (h0 >> 2);
+			return h0;
+		}
+	};
+
+	static inline double sqr(double v) { return v * v; }
+
+	void Patch::deduplicate_points_and_remap_hex(std::vector<vec3d>& points, std::vector<uint>& hex_idx, double tol = 1e-6) {
+		assert(tol > 0.0 && !points.empty());
+		const double inv_tol = 1.0 / tol;
+		const double tol2 = tol * tol;
+		// 栅格：key 为量化后的格子坐标；value 存该格子的“代表点”在 uniques 中的索引
+		std::unordered_map<std::array<long long, 3>, std::vector<uint>, Array3LLHash> grid;
+		grid.reserve(points.size() * 2);
+
+		std::vector<vec3d> uniques;
+		uniques.reserve(points.size());
+		std::vector<uint> old2new(points.size(), -1);
+
+		auto quantize = [&](const vec3d& p) {
+			// 用 llround 对边界更稳健
+			return std::array<long long, 3>{
+				static_cast<long long>(llround(p.x()* inv_tol)),
+					static_cast<long long>(llround(p.y()* inv_tol)),
+					static_cast<long long>(llround(p.z()* inv_tol))
+			};
+		};
+
+		auto dist2 = [&](const vec3d& a, const vec3d& b) {
+			return sqr(a.x() - b.x()) + sqr(a.y() - b.y()) + sqr(a.z() - b.z());
+		};
+
+		// 建立代表点并填 old2new
+		for (int i = 0; i < static_cast<int>(points.size()); ++i) {
+			const vec3d& p = points[i];
+			const auto base = quantize(p);
+
+			int mapped = -1;
+			for (int dx = -1; dx <= 1 && mapped < 0; ++dx) {
+				for (int dy = -1; dy <= 1 && mapped < 0; ++dy) {
+					for (int dz = -1; dz <= 1 && mapped < 0; ++dz) {
+						std::array<long long, 3> key{ base[0] + dx, base[1] + dy, base[2] + dz };
+						auto it = grid.find(key);
+						if (it == grid.end()) continue;
+
+						for (int rep : it->second) {
+							if (dist2(p, uniques[rep]) <= tol2) {
+								mapped = rep;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			if (mapped < 0) {
+				// 新代表点
+				mapped = static_cast<int>(uniques.size());
+				uniques.push_back(p);
+				grid[base].push_back(mapped);
+			}
+			old2new[i] = mapped;
+		}
+
+		for (auto& idx : hex_idx) {
+			idx = old2new[idx];
+		}
+		points.assign(uniques.begin(), uniques.end());
 	}
 
 	void Patch::patching(std::string root, std::string patchLabelFileName, int num_clusters) {
@@ -472,22 +554,30 @@ namespace cinolib {
 		}
 	}
 
-	void Patch::subdiv(std::string root) {
+	void Patch::subdiv(std::string root, int subdiv_times) {
 		std::vector<vec3d> pos;
 		std::vector<uint> polys;
-		int temp = 0;
-		std::cout << "subdivision start." << std::endl;
-		for (singlePatch patch : patches) {
-			std::cout << "subdiving patch: " << temp++ << std::endl;
-			patch.subdiv(root, pos, polys);
+		for (int i = 0; i < subdiv_times; i++) {
+			int temp = 0;
+			std::cout << "subdivision start." << std::endl;
+			for (singlePatch patch : patches) {
+				std::cout << "subdiving patch: " << temp++ << std::endl;
+				patch.subdiv(root, pos, polys);
+			}
+			std::cout << "subdivision complete." << std::endl;
+#ifdef DRAW
+			deduplicate_points_and_remap_hex(pos, polys);
+			DrawableHexmesh<> newMesh(pos, polys);
+			GLcanvas gui;
+			gui.push(&newMesh);
+			gui.launch();
+#endif
+			mesh = Hexmesh<>(pos, polys);
 		}
-		std::cout << "subdivision complete." << std::endl;
-		DrawableHexmesh<> newMesh(pos, polys);
-		GLcanvas gui;
-		gui.push(&newMesh);
-		gui.launch();
+#ifdef OUTPUT
 		std::string outPath = root + "/clustered_hexa/subdiv_result.mesh";
-		newMesh.save(outPath.c_str());
+		mesh.save(outPath.c_str());
+#endif
 	}
 
 	void Patch::singlePatch::subdiv(std::string root, std::vector<vec3d>& pos, std::vector<uint>& polys) {
@@ -1042,23 +1132,16 @@ namespace cinolib {
 
 int main() {
 	static std::string root(DATA_PATH);
-#ifdef DRAW
-	cinolib::DrawableHexmesh<> newMesh(root + "/clustered_hexa/fixed_mesh.mesh");
-	cinolib::GLcanvas gui;
-	gui.push(&newMesh);
-	gui.launch();
+#ifdef TEST
+	cinolib::Patch patch(root + "/test/mesh.mesh");
+	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
+	patch.patching(root + "/test/clustered_id.txt", 8);
+	patch.subdiv();
 #else
-	#ifdef TEST
-		cinolib::Patch patch(root + "/test/mesh.mesh");
-		std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-		patch.patching(root + "/test/clustered_id.txt", 8);
-		patch.subdiv();
-	#else
-		cinolib::Patch patch(root + "/clustered_hexa/mesh.mesh");
-		std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-		patch.patching(root, root + "/clustered_hexa/clustered_id.txt", 16);
-		patch.subdiv(root);
-	#endif
+	cinolib::Patch patch(root + "/clustered_hexa/mesh.mesh");
+	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
+	patch.patching(root, root + "/clustered_hexa/clustered_id.txt", 16);
+	patch.subdiv(root, 1);
 #endif
 }
 
