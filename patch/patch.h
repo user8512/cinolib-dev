@@ -61,5 +61,5 @@ namespace cinolib
 		bool getPolyFaceSign(uint fid, uint pid);
 	};
 
-	void PrintVec3d(vec3d& v);
+	inline void PrintVec3d(vec3d& v);
 }

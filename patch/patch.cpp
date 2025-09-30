@@ -11,7 +11,7 @@
 
 //#define TEST
 //#define DRAW
-#define DEBUG
+//#define DEBUG
 #define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
@@ -89,12 +89,12 @@ namespace cinolib {
 		uint patchVerts;
 		// pos of each vert
 		std::vector<vec3d> v_pos;
-		// map global index to local index
-		std::map<uint, uint> vertIdxGlobal2Local;
-		std::map<uint, uint> edgeIdxGlobal2Local;
-		std::map<uint, uint> faceIdxGlobal2Local;
-		std::map<uint, uint> polyIdxGlobal2Local;
-
+		// map: global index to local index
+		std::unordered_map<uint, uint> vertIdxGlobal2Local;
+		std::unordered_map<uint, uint> edgeIdxGlobal2Local;
+		std::unordered_map<uint, uint> faceIdxGlobal2Local;
+		std::unordered_map<uint, uint> polyIdxGlobal2Local;
+		// boundary operators and offsets
 		std::vector<vec2u> edgeVerts;
 		std::vector<int> faceEdges;
 		std::vector<int> polyFaces;
@@ -157,7 +157,7 @@ namespace cinolib {
 					}
 				}
 			}
-			// 从 1-ring 扩到 2-ring
+			// extend 1-ring to 2-ring
 			for (auto& pid : ring1) {
 				for (auto& adj : mesh.adj_p2p(pid)) {
 					if (polyIdxGlobal2Local.find(adj) == polyIdxGlobal2Local.end()) {
@@ -173,12 +173,12 @@ namespace cinolib {
 			std::cout << "ribbon size: " << polys.size() - patchPolys << std::endl;
 #endif
 
-			//3. index of faces ordered by relevant cell(first scan to record items num of patch)
+			// 3. first scan to record items num of patch
 			for (auto& pid : patch) {
 				for (auto& fid : mesh.adj_p2f(pid)) {
 					for (auto& eid : mesh.adj_f2e(fid)) {
 						for (auto& vid : mesh.adj_e2v(eid)) {
-							if (std::find(verts.begin(), verts.end(), vid) == verts.end()) {
+							if (vertIdxGlobal2Local.find(vid) == vertIdxGlobal2Local.end()) {
 								vertIdxGlobal2Local[vid] = verts.size();
 								verts.push_back(vid);
 								v_pos.push_back(mesh.vert(vid));
@@ -186,14 +186,14 @@ namespace cinolib {
 								vertOnSurf.push_back(mesh.vert_is_on_srf(vid));
 							}
 						}
-						if (std::find(edges.begin(), edges.end(), eid) == edges.end()) {
+						if (edgeIdxGlobal2Local.find(eid) == edgeIdxGlobal2Local.end()) {
 							edgeIdxGlobal2Local[eid] = edges.size();
 							edges.push_back(eid);
 							patchEdges++;
 							edgeOnSurf.push_back(mesh.edge_is_on_srf(eid));
 						}
 					}
-					if (std::find(faces.begin(), faces.end(), fid) == faces.end()) {
+					if (faceIdxGlobal2Local.find(fid) == faceIdxGlobal2Local.end()) {
 						faceIdxGlobal2Local[fid] = faces.size();
 						faces.push_back(fid);
 						patchFaces++;
@@ -202,9 +202,10 @@ namespace cinolib {
 				}
 			}
 
+			// 4. index of faces ordered by relevant cell
 			for (auto &pid : polys) {
 				for (auto &fid : mesh.adj_p2f(pid)) {
-					if (std::find(faces.begin(), faces.end(), fid) == faces.end()) {
+					if (faceIdxGlobal2Local.find(fid) == faceIdxGlobal2Local.end()) {
 						faceIdxGlobal2Local[fid] = faces.size();
 						faces.push_back(fid);
 						faceOnSurf.push_back(mesh.face_is_on_srf(fid));
@@ -212,10 +213,10 @@ namespace cinolib {
 				}
 			}
 
-			//4. index of edges ordered by relevant face
+			// 5. index of edges ordered by relevant face
 			for (auto& fid : faces) {
 				for (auto& eid : mesh.adj_f2e(fid)) {
-					if (std::find(edges.begin(), edges.end(), eid) == edges.end()) {
+					if (edgeIdxGlobal2Local.find(eid) == edgeIdxGlobal2Local.end()) {
 						edgeIdxGlobal2Local[eid] = edges.size();
 						edges.push_back(eid);
 						edgeOnSurf.push_back(mesh.edge_is_on_srf(eid));
@@ -223,10 +224,10 @@ namespace cinolib {
 				}
 			}
 
-			//5. index of verts ordered by relevant edge
+			// 6. index of verts ordered by relevant edge
 			for (auto& eid : edges) {
 				for (auto& vid : mesh.adj_e2v(eid)) {
-					if (std::find(verts.begin(), verts.end(), vid) == verts.end()) {
+					if (vertIdxGlobal2Local.find(vid) == vertIdxGlobal2Local.end()) {
 						vertIdxGlobal2Local[vid] = verts.size();
 						verts.push_back(vid);
 						v_pos.push_back(mesh.vert(vid));
@@ -294,7 +295,7 @@ namespace cinolib {
 			}
 #endif
 
-			// build all top-down relations
+			// 7.build all top-down relations
 			for (auto& pid : polys) {
 				for (auto& fid : mesh.adj_p2f(pid)) {
 					if (getPolyFaceSign(pid, fid)) {
@@ -321,7 +322,7 @@ namespace cinolib {
 				edgeVerts.emplace_back(vertIdxGlobal2Local[mesh.edge_vert_id(eid, 0)], vertIdxGlobal2Local[mesh.edge_vert_id(eid, 1)]);
 			}
 
-			// build all down-top relations
+			// 8.build all down-top relations
 			vertEdgesOffset.reserve(verts.size() + 1);
 			edgeFacesOffset.reserve(edges.size() + 1);
 			facePolysOffset.reserve(faces.size() + 1);
@@ -385,6 +386,7 @@ namespace cinolib {
 			}
 			outfile2 << '\n';
 #endif
+
 #ifdef OUTPUT_DETAIL
 			outfile3 << "cluster" << cluster << std::endl;
 
@@ -476,19 +478,19 @@ namespace cinolib {
 		std::vector<uint> polys;
 		int temp = 0;
 		for (singlePatch patch : patches) {
-			std::cout << "subdiv patch: " << temp++ << std::endl;
+			std::cout << "subdiving patch: " << temp++ << std::endl;
 			patch.subdiv(pos, polys);
 		}
+		std::cout << "subdivision complete." << std::endl;
 		DrawableHexmesh<> newMesh(pos, polys);
 		GLcanvas gui;
 		gui.push(&newMesh);
 		gui.launch();
-		newMesh.save("D:/data/clustered_hexa/result.mesh");
+		newMesh.save("D:/data/clustered_hexa/subdiv_result.mesh");
 	}
 
-	int count = 0;
-
 	void Patch::singlePatch::subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys) {
+
 #ifdef OUTPUT
 		std::ofstream outfile("D:/data/clustered_hexa/test/subdiv.txt", std::ios::app);
 		if (!outfile) {
@@ -496,24 +498,24 @@ namespace cinolib {
 		}
 #endif
 
-		int ne = edgeVerts.size();
-		int nf = faceEdges.size() / 4;
-		int np = polyFaces.size() / 6;
-
 		//新的几何点
 		std::vector<vec3d> newFaceVerts, newEdgeVerts, newVertVerts;
-
 		//各中点（中间量）
 		std::vector<vec3d> polyCentroids, faceCentroids, edgeCentroids;
 
+		uint ne = edgeVerts.size();
+		uint nf = faceEdges.size() / 4;
+		uint np = polyFaces.size() / 6;
 		polyCentroids.reserve(np);
 		faceCentroids.reserve(nf);
 		edgeCentroids.reserve(ne);
-
 		newFaceVerts.reserve(patchFaces);
 		newEdgeVerts.reserve(patchEdges);
 		newVertVerts.reserve(patchVerts);
 
+		std::vector<uint> tempPolys;
+		std::vector<uint> tempFaces;
+		std::vector<uint> tempEdges;
 		std::vector<uint> tempVerts;
 
 		//求体的中点
@@ -543,7 +545,7 @@ namespace cinolib {
 			for (uint v : tempVerts) {
 				PolyCentroid += vertsPos[v];
 			}
-			PolyCentroid /= 8;
+			PolyCentroid /= tempVerts.size();
 			polyCentroids.push_back(PolyCentroid);
 		}
 
@@ -568,7 +570,7 @@ namespace cinolib {
 			for (uint v : tempVerts) {
 				faceCentroid += vertsPos[v];
 			}
-			faceCentroid /= 4;
+			faceCentroid /= tempVerts.size();
 			faceCentroids.push_back(faceCentroid);
 		}
 
@@ -583,7 +585,7 @@ namespace cinolib {
 			edgeCentroids.push_back(edgeCentroid);
 		}
 
-		//求新体点
+		//求新体点(与体的中心一致)
 		std::vector<vec3d> newPolyVerts(polyCentroids.begin(), polyCentroids.begin() + patchPolys);
 
 		//求新面点
@@ -612,9 +614,6 @@ namespace cinolib {
 		}
 
 		//求新边点
-		std::vector<uint> tempFaces;
-		std::vector<uint> tempPolys;
-
 		for (int e = 0; e < patchEdges; e++) {
 			tempFaces.clear();
 			tempPolys.clear();
@@ -654,32 +653,38 @@ namespace cinolib {
 				newEdgeVert /= N;
 				newEdgeVerts.push_back(newEdgeVert);
 			}
+			// 边界面
 			else {
-				vec3d faceAvg(0, 0, 0);
-				for (int i = 0; i < N; i++) {
-					int face = edgeFaces[edgeFacesOffset[e] + i];
-					if (face < 0) {
-						face = -face - 1;
-					}
-					if (faceOnSurf[face]) {
-						tempFaces.push_back(face);
-					}
+				// 仅属于一个外界面：直接取边的中点
+				if (N == 1) {
+					newEdgeVerts.push_back(edgeCentroids[e]);
 				}
-				for (auto& face : tempFaces) {
-					faceAvg += faceCentroids[face];
+				else {
+					for (int i = 0; i < N; i++) {
+						int face = edgeFaces[edgeFacesOffset[e] + i];
+						if (face < 0) {
+							face = -face - 1;
+						}
+						// 只关心与边界边相邻的边界面
+						if (faceOnSurf[face]) {
+							tempFaces.push_back(face);
+						}
+					}
+					vec3d faceAvg(0, 0, 0);
+					for (auto& face : tempFaces) {
+						faceAvg += faceCentroids[face];
+					}
+					faceAvg /= tempFaces.size();
+					vec3d newEdgeVert(0, 0, 0);
+					newEdgeVert += faceAvg;
+					newEdgeVert += edgeCentroids[e];
+					newEdgeVert /= 2;
+					newEdgeVerts.push_back(newEdgeVert);
 				}
-				faceAvg /= tempFaces.size();
-				vec3d newEdgeVert(0, 0, 0);
-				newEdgeVert += faceAvg;
-				newEdgeVert += edgeCentroids[e];
-				newEdgeVert /= 2;
-				newEdgeVerts.push_back(newEdgeVert);
 			}
 		}
 
 		//求新点点
-		std::vector<uint> tempEdges;
-
 		for (int v = 0; v < patchVerts; v++) {
 			tempEdges.clear();
 			tempFaces.clear();
@@ -736,9 +741,8 @@ namespace cinolib {
 				newVertVert /= 8;
 				newVertVerts.push_back(newVertVert);
 			}
+			// 边界点
 			else {
-				vec3d edgeAvg(0, 0, 0);
-				vec3d faceAvg(0, 0, 0);
 				for (int i = 0; i < N; i++) {
 					int edge = vertEdges[vertEdgesOffset[v] + i];
 					if (edge < 0) {
@@ -758,14 +762,17 @@ namespace cinolib {
 						}
 					}
 				}
+				vec3d edgeAvg(0, 0, 0);
 				for (auto& edge : tempEdges) {
 					edgeAvg += edgeCentroids[edge];
 				}
 				edgeAvg /= tempEdges.size();
+				vec3d faceAvg(0, 0, 0);
 				for (auto& face : tempFaces) {
 					faceAvg += faceCentroids[face];
 				}
 				faceAvg /= tempFaces.size();
+				// 考虑该点的度时，仅考虑边界边
 				int n = tempEdges.size();
 				vec3d newVertVert(0, 0, 0);
 				newVertVert += faceAvg;
@@ -777,6 +784,7 @@ namespace cinolib {
 		}
 
 #ifdef OUTPUT
+		static int count = 0;
 		outfile << "cluster: " << count++ << std::endl;
 		outfile << "new poly verts: " << std::endl;
 		for (auto& v : newPolyVerts) {
@@ -796,6 +804,8 @@ namespace cinolib {
 		}
 #endif
 
+		// 预计算各元素的偏移量：分别来自先前已保存的patch部分，以及当前patch的上层元素部分
+		// 所有patch产生的新点都被存在同一个一维vector中
 		uint pvOffset = pos.size();
 		uint fvOffset = pvOffset + newPolyVerts.size();
 		uint evOffset = fvOffset + newFaceVerts.size();
@@ -814,16 +824,16 @@ namespace cinolib {
 			pos.push_back(v);
 		}
 
-#ifdef DETAIL
+#ifdef DEBUG
 		std::cout << "pvOffset: " << pvOffset << ", fvOffset: " << fvOffset << ", evOffset: " << evOffset << ", vvOffset: " << vvOffset << std::endl;
 #endif
 
+		// 对每个poly，计算完新点后，建立局部拓扑
 		std::vector<uint> FV(6);
 		std::vector<uint> EV(12);
 		std::vector<uint> VV(8);
 		bool f1Reverse = false;
-		bool f2Reverse = false;
-		// 求所有新的体的拓扑
+
 		for (int p = 0; p < patchPolys; p++) {
 			// 1.找到两个相对的面
 			int f1, f2;
@@ -847,7 +857,6 @@ namespace cinolib {
 				int f = polyFaces[p * 6 + faceOff];
 				if (f < 0) {
 					f = -f - 1;
-					fReverse = true;
 				}
 				// 检测是否有重复边
 				for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
@@ -864,7 +873,6 @@ namespace cinolib {
 				}
 				if (flag) {
 					f2 = f;
-					f2Reverse = fReverse;
 					break;
 				}
 			}
