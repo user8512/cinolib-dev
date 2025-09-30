@@ -54,27 +54,11 @@ namespace cinolib
 		Hexmesh<> getMesh() { return mesh; }
 
 	private:
-		int maxPatchSize = 0;
 		Hexmesh<> mesh;
 		std::vector<singlePatch> patches;
 
 		bool getFaceEdgeSign(uint eid, uint fid);
 		bool getPolyFaceSign(uint fid, uint pid);
-
-		inline void getBoundaryPolys(std::vector<uint>& polys) {
-			std::vector<uint> newpolys;
-			for (auto pid : polys) {
-				if (mesh.poly_is_on_surf(pid)) {
-					newpolys.push_back(pid);
-				}
-			}
-			polys = newpolys;
-		}
-
-		void setMaxPatchSize(int size) {
-			assert(size > 0);
-			maxPatchSize = size;
-		}
 	};
 
 	void PrintVec3d(vec3d& v);

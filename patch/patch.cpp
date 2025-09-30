@@ -35,17 +35,8 @@ namespace cinolib {
 	bool Patch::getFaceEdgeSign(uint fid, uint eid) {
 		vec3d start = mesh.edge_vert(eid, 0);
 		vec3d end = mesh.edge_vert(eid, 1);
-		auto fv = mesh.face_verts(fid);
-		if (fv[0] == start && fv[1] == end) {
-			return true;
-		}
-		if (fv[1] == start && fv[2] == end) {
-			return true;
-		}
-		if (fv[2] == start && fv[3] == end) {
-			return true;
-		}
-		if (fv[3] == start && fv[0] == end) {
+		std::vector<vec3d> fv = mesh.face_verts(fid);
+		if ((fv[0] == start && fv[1] == end) || (fv[1] == start && fv[2] == end) || (fv[2] == start && fv[3] == end) || (fv[3] == start && fv[0] == end)) {
 			return true;
 		}
 		return false;
@@ -56,6 +47,7 @@ namespace cinolib {
 	}
 
 	void Patch::patching(std::string patchLabelFileName, int num_clusters) {
+
 #ifdef OUTPUT
 		std::ofstream outfile("D:/data/clustered_hexa/test/patch.txt");
 		if (!outfile) {
@@ -75,14 +67,10 @@ namespace cinolib {
 		if (!file) {
 			std::cerr << "无法打开文件" << std::endl;
 		}
-
 		file.seekg(0, std::ios::end);
 		std::streamsize size = file.tellg();
 		file.seekg(0, std::ios::beg);
-
 		size_t num_elements = size / sizeof(int32_t);
-		
-
 		std::vector<int32_t> patchLabel(num_elements);
 		file.read(reinterpret_cast<char*>(patchLabel.data()), size);
 
@@ -101,7 +89,7 @@ namespace cinolib {
 		uint patchVerts;
 		// pos of each vert
 		std::vector<vec3d> v_pos;
-
+		// map global index to local index
 		std::map<uint, uint> vertIdxGlobal2Local;
 		std::map<uint, uint> edgeIdxGlobal2Local;
 		std::map<uint, uint> faceIdxGlobal2Local;
@@ -116,12 +104,13 @@ namespace cinolib {
 		std::vector<uint> vertEdgesOffset;
 		std::vector<uint> edgeFacesOffset;
 		std::vector<uint> facePolysOffset;
-
 		std::vector<bool> vertOnSurf;
 		std::vector<bool> edgeOnSurf;
 		std::vector<bool> faceOnSurf;
 
+		// cluster = patch with 2-ring ribbon
 		for (int cluster = 0; cluster < num_clusters; cluster++) {
+			// initialize
 			patchPolys = 0;
 			patchFaces = 0;
 			patchEdges = 0;
@@ -130,6 +119,18 @@ namespace cinolib {
 			verts.clear();
 			edges.clear();
 			faces.clear();
+			edgeVerts.clear();
+			faceEdges.clear();
+			polyFaces.clear();
+			vertEdges.clear();
+			edgeFaces.clear();
+			facePolys.clear();
+			vertEdgesOffset.clear();
+			edgeFacesOffset.clear();
+			facePolysOffset.clear();
+			vertOnSurf.clear();
+			edgeOnSurf.clear();
+			faceOnSurf.clear();
 			vertIdxGlobal2Local.clear();
 			edgeIdxGlobal2Local.clear();
 			faceIdxGlobal2Local.clear();
@@ -1029,7 +1030,7 @@ namespace cinolib {
 		}
 	}
 
-	void PrintVec3d(vec3d& v) {
+	inline void PrintVec3d(vec3d& v) {
 		std::cout << std::endl << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
 	}
 };
