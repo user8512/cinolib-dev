@@ -23,7 +23,7 @@ namespace cinolib
 					edgeFaces(std::move(ef)), facePolys(std::move(fc)), vertEdgesOffset(std::move(veoff)), edgeFacesOffset(std::move(efoff)), facePolysOffset(std::move(fpoff)),
 					vertOnSurf(std::move(vos)), edgeOnSurf(std::move(eos)), faceOnSurf(std::move(fos)){}
 			~singlePatch() = default;
-			void subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys);
+			void subdiv(std::string root, std::vector<vec3d>& pos, std::vector<uint>& polys);
 
 		private:
 			uint patchPolys;
@@ -49,8 +49,8 @@ namespace cinolib
 			std::vector<bool> faceOnSurf;
 		};
 		
-		void patching(std::string patchLabelFileName, int num_clusters);
-		void Patch::subdiv();
+		void patching(std::string root, std::string patchLabelFileName, int num_clusters);
+		void Patch::subdiv(std::string root);
 		Hexmesh<> getMesh() { return mesh; }
 
 	private:

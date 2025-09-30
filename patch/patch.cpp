@@ -46,26 +46,25 @@ namespace cinolib {
 		return mesh.poly_face_is_CCW(pid, fid);
 	}
 
-	void Patch::patching(std::string patchLabelFileName, int num_clusters) {
+	void Patch::patching(std::string root, std::string patchLabelFileName, int num_clusters) {
 
 #ifdef OUTPUT
-		std::ofstream outfile("D:/Code/cinolib-dev/patch/data/clustered_hexa/test/patch.txt");
+		std::ofstream outfile(root + "/clustered_hexa/test/patch.txt");
 		if (!outfile) {
-			std::cerr << "无法打开文件" << std::endl;
+			std::cerr << "无法打开patch文件" << std::endl;
 		}
-		std::ofstream outfile2("D:/Code/cinolib-dev/patch/data/clustered_hexa/test/ribbon.txt");
+		std::ofstream outfile2(root + "/clustered_hexa/test/ribbon.txt");
 		if (!outfile2) {
-			std::cerr << "无法打开文件" << std::endl;
+			std::cerr << "无法打开ribbon文件" << std::endl;
 		}
-		std::ofstream outfile3("D:/Code/cinolib-dev/patch/data/clustered_hexa/test/detail.txt");
+		std::ofstream outfile3(root + "/clustered_hexa/test/detail.txt");
 		if (!outfile3) {
-			std::cerr << "无法打开文件" << std::endl;
+			std::cerr << "无法打开detail文件" << std::endl;
 		}
 #endif
-
 		std::ifstream file(patchLabelFileName, std::ios::binary);
 		if (!file) {
-			std::cerr << "无法打开文件" << std::endl;
+			std::cerr << "无法打开label文件" << std::endl;
 		}
 		file.seekg(0, std::ios::end);
 		std::streamsize size = file.tellg();
@@ -473,28 +472,30 @@ namespace cinolib {
 		}
 	}
 
-	void Patch::subdiv() {
+	void Patch::subdiv(std::string root) {
 		std::vector<vec3d> pos;
 		std::vector<uint> polys;
 		int temp = 0;
+		std::cout << "subdivision start." << std::endl;
 		for (singlePatch patch : patches) {
 			std::cout << "subdiving patch: " << temp++ << std::endl;
-			patch.subdiv(pos, polys);
+			patch.subdiv(root, pos, polys);
 		}
 		std::cout << "subdivision complete." << std::endl;
 		DrawableHexmesh<> newMesh(pos, polys);
 		GLcanvas gui;
 		gui.push(&newMesh);
 		gui.launch();
-		newMesh.save("D:/Code/cinolib-dev/patch/data/clustered_hexa/subdiv_result.mesh");
+		std::string outPath = root + "/clustered_hexa/subdiv_result.mesh";
+		newMesh.save(outPath.c_str());
 	}
 
-	void Patch::singlePatch::subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys) {
+	void Patch::singlePatch::subdiv(std::string root, std::vector<vec3d>& pos, std::vector<uint>& polys) {
 
 #ifdef OUTPUT
-		std::ofstream outfile("D:/Code/cinolib-dev/patch/data/clustered_hexa/test/subdiv.txt", std::ios::app);
+		std::ofstream outfile(root + "/clustered_hexa/test/subdiv.txt", std::ios::app);
 		if (!outfile) {
-			std::cerr << "无法打开文件" << std::endl;
+			std::cerr << "无法打开subdiv文件" << std::endl;
 		}
 #endif
 
@@ -1040,22 +1041,23 @@ namespace cinolib {
 };
 
 int main() {
+	static std::string root(DATA_PATH);
 #ifdef DRAW
-	cinolib::DrawableHexmesh<> newMesh("D:/Code/cinolib-dev/patch/data/clustered_hexa/fixed_mesh.mesh");
+	cinolib::DrawableHexmesh<> newMesh(root + "/clustered_hexa/fixed_mesh.mesh");
 	cinolib::GLcanvas gui;
 	gui.push(&newMesh);
 	gui.launch();
 #else
 	#ifdef TEST
-		cinolib::Patch patch("D:/Code/cinolib-dev/patch/data/test/mesh.mesh");
+		cinolib::Patch patch(root + "/test/mesh.mesh");
 		std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-		patch.patching("D:/Code/cinolib-dev/patch/data/test/clustered_id.txt", 8);
+		patch.patching(root + "/test/clustered_id.txt", 8);
 		patch.subdiv();
 	#else
-		cinolib::Patch patch("D:/Code/cinolib-dev/patch/data/clustered_hexa/mesh.mesh");
+		cinolib::Patch patch(root + "/clustered_hexa/mesh.mesh");
 		std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-		patch.patching("D:/Code/cinolib-dev/patch/data/clustered_hexa/clustered_id.txt", 16);
-		patch.subdiv();
+		patch.patching(root, root + "/clustered_hexa/clustered_id.txt", 16);
+		patch.subdiv(root);
 	#endif
 #endif
 }

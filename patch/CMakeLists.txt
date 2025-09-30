@@ -11,3 +11,7 @@ set(CINOLIB_USES_OPENGL_GLFW_IMGUI ON)
 find_package(cinolib REQUIRED)
 
 target_link_libraries(${PROJECT_NAME} cinolib)
+
+target_compile_definitions(patch PRIVATE
+    DATA_PATH="../../../data"
+)
