@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.2)
 
 project(patch)
 
-add_executable(${PROJECT_NAME} patch.cpp)
+add_executable(${PROJECT_NAME} patch.cpp kmeans.cpp)
 
 set(cinolib_DIR "${PROJECT_SOURCE_DIR}/..")
 

@@ -1,4 +1,5 @@
 #include "patch.h"
+#include "kmeans.h"
 #include <stack>
 #include <algorithm>
 #include <random>
@@ -21,6 +22,9 @@
 #define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
+
+#define NUM_CLUSTERS 4
+std::string root(DATA_PATH);
 
 namespace cinolib {
 	Patch::Patch() {}
@@ -128,7 +132,7 @@ namespace cinolib {
 		points.assign(uniques.begin(), uniques.end());
 	}
 
-	void Patch::patching(std::string root, std::string patchLabelFileName, int num_clusters) {
+	void Patch::patching(int num_clusters) {
 
 #ifdef OUTPUT
 		std::ofstream outfile(root + "/clustered_hexa/test/patch.txt");
@@ -144,16 +148,7 @@ namespace cinolib {
 			std::cerr << "无法打开detail文件" << std::endl;
 		}
 #endif
-		std::ifstream file(patchLabelFileName, std::ios::binary);
-		if (!file) {
-			std::cerr << "无法打开label文件" << std::endl;
-		}
-		file.seekg(0, std::ios::end);
-		std::streamsize size = file.tellg();
-		file.seekg(0, std::ios::beg);
-		size_t num_elements = size / sizeof(int32_t);
-		std::vector<int32_t> patchLabel(num_elements);
-		file.read(reinterpret_cast<char*>(patchLabel.data()), size);
+		std::vector<int> patchLabel = KMeansOnPolyCenters(mesh, num_clusters);
 
 		// temporary, global idx
 		std::vector<uint> patch;
@@ -190,6 +185,7 @@ namespace cinolib {
 		std::vector<bool> faceOnSurf;
 
 		// cluster = patch with 2-ring ribbon
+		patches.clear();
 		for (int cluster = 0; cluster < num_clusters; cluster++) {
 			// initialize
 			patchPolys = 0;
@@ -554,15 +550,16 @@ namespace cinolib {
 		}
 	}
 
-	void Patch::subdiv(std::string root, int subdiv_times) {
+	void Patch::subdiv(int subdiv_times) {
 		std::vector<vec3d> pos;
 		std::vector<uint> polys;
 		for (int i = 0; i < subdiv_times; i++) {
+			patching(NUM_CLUSTERS);
 			int temp = 0;
 			std::cout << "subdivision start." << std::endl;
 			for (singlePatch patch : patches) {
 				std::cout << "subdiving patch: " << temp++ << std::endl;
-				patch.subdiv(root, pos, polys);
+				patch.subdiv(pos, polys);
 			}
 			std::cout << "subdivision complete." << std::endl;
 #ifdef DRAW
@@ -580,7 +577,7 @@ namespace cinolib {
 #endif
 	}
 
-	void Patch::singlePatch::subdiv(std::string root, std::vector<vec3d>& pos, std::vector<uint>& polys) {
+	void Patch::singlePatch::subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys) {
 
 #ifdef OUTPUT
 		std::ofstream outfile(root + "/clustered_hexa/test/subdiv.txt", std::ios::app);
@@ -1131,7 +1128,6 @@ namespace cinolib {
 };
 
 int main() {
-	static std::string root(DATA_PATH);
 #ifdef TEST
 	cinolib::Patch patch(root + "/test/mesh.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
@@ -1140,8 +1136,7 @@ int main() {
 #else
 	cinolib::Patch patch(root + "/clustered_hexa/mesh.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching(root, root + "/clustered_hexa/clustered_id.txt", 16);
-	patch.subdiv(root, 1);
+	patch.subdiv(1);
 #endif
 }
 
