@@ -10,9 +10,9 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <chrono>
 
 namespace cinolib {
-    // 轻量设备/主机两用的三维向量（用于 GPU 侧计算）
     struct dvec3 {
         double x, y, z;
         __host__ __device__ dvec3() : x(0), y(0), z(0) {}
@@ -391,6 +391,7 @@ namespace cinolib {
         auto c_begin_p = thrust::make_counting_iterator<int>(0);
         auto c_begin_v = thrust::make_counting_iterator<int>(0);
 
+        auto computation_start = std::chrono::high_resolution_clock::now();
         // (1) 边心
         thrust::for_each(c_begin_e, c_begin_e + int(ne),
             EdgeCentroidOp(thrust::raw_pointer_cast(dEV.data()),
@@ -451,6 +452,8 @@ namespace cinolib {
                 thrust::raw_pointer_cast(d_PC.data()),
                 thrust::raw_pointer_cast(d_newVert.data())));
 
+        auto computation_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> computation_elapsed = computation_end - computation_start;
         // ----------- 把新点拷回主机并写入 pos -----------
         thrust::host_vector<dvec3> h_newPoly = d_newPoly;
         thrust::host_vector<dvec3> h_newFace = d_newFace;
@@ -470,6 +473,7 @@ namespace cinolib {
         for (const auto& v : h_newEdge) pos.push_back(to_h(v));
         for (const auto& v : h_newVert) pos.push_back(to_h(v));
 
+        auto topo_start = std::chrono::high_resolution_clock::now();
         // ----------- 主机侧：复用你原先的拓扑装配逻辑 -----------
         // 注意：这里使用已有的成员数组（edgeVerts/faceEdges/polyFaces/...）
         //       以及我们刚刚计算好的偏移 pvOffset/fvOffset/evOffset/vvOffset。
@@ -629,12 +633,16 @@ namespace cinolib {
             polys.insert(polys.end(), { PV,    FV[3], EV[6], FV[4], FV[1], EV[9], VV[6], EV[10] });
             polys.insert(polys.end(), { FV[5], PV,    FV[4], EV[7], EV[11],FV[1], EV[10],VV[7] });
         }
+
+        auto topo_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> topo_elapsed = topo_end - topo_start;
+        std::cout << ", computation: " << computation_elapsed.count() << " ms, topo: " << topo_elapsed.count() << " ms" << std::endl;
     }
     
     static inline dvec3 to_d(const vec3d& v) {
         return dvec3(v.x(), v.y(), v.z());
     }
     static inline vec3d to_h(const dvec3& v) {
-        return cinolib::vec3d(v.x, v.y, v.z);
+        return vec3d(v.x, v.y, v.z);
     }
 }

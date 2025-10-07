@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 #include <functional>
+#include <chrono>
 
 //#define TEST
 #define DRAW
@@ -557,16 +558,21 @@ namespace cinolib {
 		for (int i = 0; i < subdiv_times; i++) {
 			patching(NUM_CLUSTERS);
 			int temp = 0;
-			std::cout << "subdivision start." << std::endl;
+			std::cout << "subdivision start." << std::endl << std::endl;
+
+			auto subdiv_start = std::chrono::high_resolution_clock::now();
 			for (singlePatch patch : patches) {
-				std::cout << "subdiving patch: " << temp++ << std::endl;
+				std::cout << "subdiving patch: " << temp++;
 #ifdef USE_CUDA
 				patch.subdiv_cuda(pos, polys);
 #else
 				patch.subdiv(pos, polys);
 #endif
 			}
-			std::cout << "subdivision complete." << std::endl;
+			auto subdiv_end = std::chrono::high_resolution_clock::now();
+
+			std::chrono::duration<double, std::milli> elapsed = subdiv_end - subdiv_start;
+			std::cout << "subdivision complete. Time cost: " << elapsed.count() << " ms\n";
 			deduplicate_points_and_remap_hex(pos, polys);
 			std::cout << "deduplication complete." << std::endl;
 #ifdef DRAW
@@ -611,6 +617,9 @@ namespace cinolib {
 		std::vector<uint> tempFaces;
 		std::vector<uint> tempEdges;
 		std::vector<uint> tempVerts;
+
+
+		auto computation_start = std::chrono::high_resolution_clock::now();
 
 		//求边的中点
 		for (int e = 0; e < ne; e++) {
@@ -849,6 +858,9 @@ namespace cinolib {
 			}
 		}
 
+		auto computation_end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> computation_elapsed = computation_end - computation_start;
+
 #ifdef OUTPUT
 		static int count = 0;
 		outfile << "cluster: " << count++ << std::endl;
@@ -885,6 +897,8 @@ namespace cinolib {
 #ifdef DEBUG
 		std::cout << "pvOffset: " << pvOffset << ", fvOffset: " << fvOffset << ", evOffset: " << evOffset << ", vvOffset: " << vvOffset << std::endl;
 #endif
+
+		auto topo_start = std::chrono::high_resolution_clock::now();
 
 		// 对每个poly，计算完新点后，建立局部拓扑
 		std::vector<uint> FV(6);
@@ -1090,6 +1104,10 @@ namespace cinolib {
 			polys.insert(polys.end(), { PV, FV[3], EV[6], FV[4], FV[1], EV[9], VV[6], EV[10] });
 			polys.insert(polys.end(), { FV[5], PV, FV[4], EV[7], EV[11], FV[1], EV[10], VV[7] });
 		}
+
+		auto topo_end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> topo_elapsed = topo_end - topo_start;
+		std::cout << ", computation: " << computation_elapsed.count() << " ms, topo: " << topo_elapsed.count() << " ms" << std::endl;
 	}
 
 	inline void PrintVec3d(vec3d& v) {
