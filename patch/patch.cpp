@@ -23,7 +23,7 @@
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
-#define NUM_CLUSTERS 4
+#define NUM_CLUSTERS 16
 std::string root(DATA_PATH);
 
 namespace cinolib {
