@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <limits>
 #include <functional>
-#include "cc_subdiv_gpu.h"
 
 //#define TEST
 #define DRAW
@@ -23,8 +22,9 @@
 #define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
+#define USE_CUDA
 
-#define NUM_CLUSTERS 4
+#define NUM_CLUSTERS 16
 std::string root(DATA_PATH);
 
 namespace cinolib {
@@ -560,11 +560,16 @@ namespace cinolib {
 			std::cout << "subdivision start." << std::endl;
 			for (singlePatch patch : patches) {
 				std::cout << "subdiving patch: " << temp++ << std::endl;
+#ifdef USE_CUDA
+				patch.subdiv_cuda(pos, polys);
+#else
 				patch.subdiv(pos, polys);
+#endif
 			}
 			std::cout << "subdivision complete." << std::endl;
-#ifdef DRAW
 			deduplicate_points_and_remap_hex(pos, polys);
+			std::cout << "deduplication complete." << std::endl;
+#ifdef DRAW
 			DrawableHexmesh<> newMesh(pos, polys);
 			GLcanvas gui;
 			gui.push(&newMesh);
@@ -606,7 +611,6 @@ namespace cinolib {
 		std::vector<uint> tempFaces;
 		std::vector<uint> tempEdges;
 		std::vector<uint> tempVerts;
-
 
 		//求边的中点
 		for (int e = 0; e < ne; e++) {
@@ -873,18 +877,10 @@ namespace cinolib {
 		uint evOffset = fvOffset + newFaceVerts.size();
 		uint vvOffset = evOffset + newEdgeVerts.size();
 
-		for (auto& v : newPolyVerts) {
-			pos.push_back(v);
-		}
-		for (auto& v : newFaceVerts) {
-			pos.push_back(v);
-		}
-		for (auto& v : newEdgeVerts) {
-			pos.push_back(v);
-		}
-		for (auto& v : newVertVerts) {
-			pos.push_back(v);
-		}
+		pos.insert(pos.end(), newPolyVerts.begin(), newPolyVerts.end());
+		pos.insert(pos.end(), newFaceVerts.begin(), newFaceVerts.end());
+		pos.insert(pos.end(), newEdgeVerts.begin(), newEdgeVerts.end());
+		pos.insert(pos.end(), newVertVerts.begin(), newVertVerts.end());
 
 #ifdef DEBUG
 		std::cout << "pvOffset: " << pvOffset << ", fvOffset: " << fvOffset << ", evOffset: " << evOffset << ", vvOffset: " << vvOffset << std::endl;

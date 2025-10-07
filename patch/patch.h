@@ -24,6 +24,7 @@ namespace cinolib
 					vertOnSurf(std::move(vos)), edgeOnSurf(std::move(eos)), faceOnSurf(std::move(fos)){}
 			~singlePatch() = default;
 			void subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys);
+			void subdiv_cuda(std::vector<vec3d>& pos, std::vector<uint>& polys);
 
 		private:
 			uint patchPolys;
