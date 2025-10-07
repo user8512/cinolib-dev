@@ -20,12 +20,12 @@
 //#define TEST
 #define DRAW
 //#define DEBUG
-#define OUTPUT
+//#define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
 //#define USE_CUDA
 
-#define NUM_CLUSTERS 16
+#define POLYS_PER_CLUSTER 512
 std::string root(DATA_PATH);
 
 namespace cinolib {
@@ -137,15 +137,15 @@ namespace cinolib {
 	void Patch::patching(int num_clusters) {
 
 #ifdef OUTPUT
-		std::ofstream outfile(root + "/clustered_hexa/test/patch.txt");
+		std::ofstream outfile(root + "/output/test/patch.txt");
 		if (!outfile) {
 			std::cerr << "无法打开patch文件" << std::endl;
 		}
-		std::ofstream outfile2(root + "/clustered_hexa/test/ribbon.txt");
+		std::ofstream outfile2(root + "/output/test/ribbon.txt");
 		if (!outfile2) {
 			std::cerr << "无法打开ribbon文件" << std::endl;
 		}
-		std::ofstream outfile3(root + "/clustered_hexa/test/detail.txt");
+		std::ofstream outfile3(root + "/output/test/detail.txt");
 		if (!outfile3) {
 			std::cerr << "无法打开detail文件" << std::endl;
 		}
@@ -555,8 +555,9 @@ namespace cinolib {
 	void Patch::subdiv(int subdiv_times) {
 		std::vector<vec3d> pos;
 		std::vector<uint> polys;
-		for (int i = 0; i < subdiv_times; i++) {
-			patching(NUM_CLUSTERS);
+		for (int i = 1; i <= subdiv_times; i++) {
+			uint num_clusters = std::min(int(mesh.num_polys() / POLYS_PER_CLUSTER + 1), 16);
+			patching(num_clusters);
 			int temp = 0;
 			std::cout << std::endl << "subdivision start." << std::endl;
 
@@ -570,21 +571,23 @@ namespace cinolib {
 #endif
 			}
 			auto subdiv_end = std::chrono::high_resolution_clock::now();
-
 			std::chrono::duration<double, std::milli> elapsed = subdiv_end - subdiv_start;
 			std::cout << "subdivision complete. Time cost: " << elapsed.count() << " ms\n" << std::endl;
 			deduplicate_points_and_remap_hex(pos, polys);
-			std::cout << "deduplication complete." << std::endl;
-#ifdef DRAW
-			DrawableHexmesh<> newMesh(pos, polys);
-			GLcanvas gui;
-			gui.push(&newMesh);
-			gui.launch();
-#endif
 			mesh = Hexmesh<>(pos, polys);
+			pos.clear();
+			polys.clear();
+			if (i == subdiv_times) {
+#ifdef DRAW
+				DrawableHexmesh<> newMesh(pos, polys);
+				GLcanvas gui;
+				gui.push(&newMesh);
+				gui.launch();
+#endif
+			}
 		}
 #ifdef OUTPUT
-		std::string outPath = root + "/clustered_hexa/subdiv_result.mesh";
+		std::string outPath = root + "/output/subdiv_result.mesh";
 		mesh.save(outPath.c_str());
 #endif
 	}
@@ -592,7 +595,7 @@ namespace cinolib {
 	void Patch::singlePatch::subdiv(std::vector<vec3d>& pos, std::vector<uint>& polys) {
 
 #ifdef OUTPUT
-		std::ofstream outfile(root + "/clustered_hexa/test/subdiv.txt", std::ios::app);
+		std::ofstream outfile(root + "/output/test/subdiv.txt", std::ios::app);
 		if (!outfile) {
 			std::cerr << "无法打开subdiv文件" << std::endl;
 		}
@@ -1105,12 +1108,11 @@ namespace cinolib {
 
 int main() {
 #ifdef TEST
-	cinolib::Patch patch(root + "/test/mesh.mesh");
+	cinolib::Patch patch(root + "/input/block.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.patching(root + "/test/clustered_id.txt", 8);
-	patch.subdiv();
+	patch.subdiv(5);
 #else
-	cinolib::Patch patch(root + "/clustered_hexa/mesh.mesh");
+	cinolib::Patch patch(root + "/input/rockerarm.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
 	patch.subdiv(1);
 #endif
