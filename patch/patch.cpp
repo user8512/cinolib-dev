@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 #include <functional>
+#include "cc_subdiv_gpu.h"
 
 //#define TEST
 #define DRAW
@@ -23,7 +24,7 @@
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
-#define NUM_CLUSTERS 16
+#define NUM_CLUSTERS 4
 std::string root(DATA_PATH);
 
 namespace cinolib {
@@ -606,61 +607,6 @@ namespace cinolib {
 		std::vector<uint> tempEdges;
 		std::vector<uint> tempVerts;
 
-		//求体的中点
-		for (int p = 0; p < np; p++) {
-			tempVerts.clear();
-			for (int faceOff = 0; faceOff < 6; faceOff++) {
-				int f = polyFaces[p * 6 + faceOff];
-				if (f < 0) {
-					f = -f - 1;
-				}
-				for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
-					int e = faceEdges[f * 4 + edgeOff];
-					if (e < 0) {
-						e = -e - 1;
-					}
-					auto start = edgeVerts[e].x();
-					auto end = edgeVerts[e].y();
-					if (find(tempVerts.begin(), tempVerts.end(), start) == tempVerts.end()) {
-						tempVerts.push_back(start);
-					}
-					if (find(tempVerts.begin(), tempVerts.end(), end) == tempVerts.end()) {
-						tempVerts.push_back(end);
-					}
-				}
-			}
-			vec3d PolyCentroid(0, 0, 0);
-			for (uint v : tempVerts) {
-				PolyCentroid += vertsPos[v];
-			}
-			PolyCentroid /= tempVerts.size();
-			polyCentroids.push_back(PolyCentroid);
-		}
-
-		//求面的中点
-		for (int f = 0; f < nf; f++) {
-			tempVerts.clear();
-			for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
-				int e = faceEdges[f * 4 + edgeOff];
-				if (e < 0) {
-					e = -e - 1;
-				}
-				auto start = edgeVerts[e].x();
-				auto end = edgeVerts[e].y();
-				if (find(tempVerts.begin(), tempVerts.end(), start) == tempVerts.end()) {
-					tempVerts.push_back(start);
-				}
-				if (find(tempVerts.begin(), tempVerts.end(), end) == tempVerts.end()) {
-					tempVerts.push_back(end);
-				}
-			}
-			vec3d faceCentroid(0, 0, 0);
-			for (uint v : tempVerts) {
-				faceCentroid += vertsPos[v];
-			}
-			faceCentroid /= tempVerts.size();
-			faceCentroids.push_back(faceCentroid);
-		}
 
 		//求边的中点
 		for (int e = 0; e < ne; e++) {
@@ -671,6 +617,34 @@ namespace cinolib {
 			edgeCentroid += vertsPos[end];
 			edgeCentroid /= 2;
 			edgeCentroids.push_back(edgeCentroid);
+		}
+
+		//求面的中点
+		for (int f = 0; f < nf; f++) {
+			vec3d faceCentroid(0, 0, 0);
+			for (int edgeOff = 0; edgeOff < 4; edgeOff++) {
+				int e = faceEdges[f * 4 + edgeOff];
+				if (e < 0) {
+					e = -e - 1;
+				}
+				faceCentroid += edgeCentroids[e];
+			}
+			faceCentroid /= 4;
+			faceCentroids.push_back(faceCentroid);
+		}
+
+		//求体的中点
+		for (int p = 0; p < np; p++) {
+			vec3d PolyCentroid(0, 0, 0);
+			for (int faceOff = 0; faceOff < 6; faceOff++) {
+				int f = polyFaces[p * 6 + faceOff];
+				if (f < 0) {
+					f = -f - 1;
+				}
+				PolyCentroid += faceCentroids[f];
+			}
+			PolyCentroid /= 6;
+			polyCentroids.push_back(PolyCentroid);
 		}
 
 		//求新体点(与体的中心一致)
