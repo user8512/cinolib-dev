@@ -327,6 +327,209 @@ namespace cinolib {
         }
     };
 
+    // 7） 每个原 poly 装配 8 个新六面体（64 个索引）
+    struct TopoAssembleOp {
+        // 读
+        const int* polyFaces;   // np*6 (带符号)
+        const int* faceEdges;   // nf*4 (带符号)
+        const uint2* edgeVerts;   // ne 条边的端点
+        // 偏移
+        const uint    pvOffset, fvOffset, evOffset, vvOffset;
+        // 写
+        uint* out;         // 大小 patchPolys*64
+
+        __host__ __device__
+            TopoAssembleOp(const int* pf, const int* fe, const uint2* ev,
+                uint pv, uint fv, uint evv, uint vv, uint* o)
+            : polyFaces(pf), faceEdges(fe), edgeVerts(ev),
+            pvOffset(pv), fvOffset(fv), evOffset(evv), vvOffset(vv), out(o) {}
+
+        __host__ __device__ static inline int iabs(int v) { return v < 0 ? (-v - 1) : v; }
+
+        __host__ __device__ static inline bool contains_u(const uint* arr, int n, uint v) {
+            for (int i = 0; i < n; ++i) if (arr[i] == v) return true;
+            return false;
+        }
+
+        __host__ __device__ static inline bool contains_i(const int* arr, int n, int v) {
+            for (int i = 0; i < n; ++i) if (arr[i] == v) return true;
+            return false;
+        }
+
+        __host__ __device__
+            void operator()(const int p) const {
+            // 本地小数组
+            uint VV[8];  int nVV = 0;
+            uint EV[12]; int nEV = 0;
+            uint FV[6];  int nFV = 0;
+
+            // 取 poly 的 6 个面（绝对值）
+            int FACES[6];
+#pragma unroll
+            for (int fo = 0; fo < 6; ++fo) {
+                FACES[fo] = iabs(polyFaces[p * 6 + fo]);
+            }
+
+            // f1 = polyFaces[p*6]，记录反向
+            int raw_f1 = polyFaces[p * 6 + 0];
+            bool f1Reverse = (raw_f1 < 0);
+            int f1 = iabs(raw_f1);
+
+            // f1 的 4 条边（绝对值）
+            int F1E[4];
+#pragma unroll
+            for (int eOff = 0; eOff < 4; ++eOff) {
+                F1E[eOff] = iabs(faceEdges[f1 * 4 + eOff]);
+            }
+
+            // 找 f2（与 f1 无共享边的那个面；按 faceOff=1..5 的顺序取“第一个满足者”）
+            int f2 = -1;
+            for (int fo = 1; fo < 6; ++fo) {
+                int f = FACES[fo];
+                bool share = false;
+#pragma unroll
+                for (int eOff = 0; eOff < 4; ++eOff) {
+                    int e = iabs(faceEdges[f * 4 + eOff]);
+                    for (int k = 0; k < 4; ++k) { if (e == F1E[k]) { share = true; break; } }
+                    if (share) break;
+                }
+                if (!share) { f2 = f; break; }
+            }
+
+            // 收集该 poly 的所有边（去重）
+            uint EDGES[12]; int nEDGES = 0;
+            for (int fo = 0; fo < 6; ++fo) {
+                int f = FACES[fo];
+#pragma unroll
+                for (int eOff = 0; eOff < 4; ++eOff) {
+                    uint e = (uint)iabs(faceEdges[f * 4 + eOff]);
+                    if (!contains_u(EDGES, nEDGES, e) && nEDGES < 12) {
+                        EDGES[nEDGES++] = e;
+                    }
+                }
+            }
+
+            // ==== 对 f1 绕边排序 VV/EV（严格复刻 CPU 逻辑）====
+            bool edgeReverse = false;
+            int eCurrent = faceEdges[f1 * 4 + 0];
+            if (eCurrent < 0) { eCurrent = -eCurrent - 1; edgeReverse = true; }
+            int vStart, vCurrent;
+            if ((f1Reverse ^ edgeReverse)) {
+                vStart = edgeVerts[(uint)eCurrent].y;
+                vCurrent = edgeVerts[(uint)eCurrent].x;
+            }
+            else {
+                vStart = edgeVerts[(uint)eCurrent].x;
+                vCurrent = edgeVerts[(uint)eCurrent].y;
+            }
+            VV[nVV++] = (uint)vStart;
+            EV[nEV++] = (uint)eCurrent;
+
+            while (vCurrent != vStart) {
+                VV[nVV++] = (uint)vCurrent;
+                // 在 f1 的其余三条边中找下一条
+                for (int eOff = 1; eOff < 4; ++eOff) {
+                    edgeReverse = false;
+                    int eTmp = faceEdges[f1 * 4 + eOff];
+                    if (eTmp < 0) { eTmp = -eTmp - 1; edgeReverse = true; }
+                    uint2 ev = edgeVerts[(uint)eTmp];
+                    if ((f1Reverse ^ edgeReverse) && (int)ev.y == vCurrent) {
+                        vCurrent = ev.x; EV[nEV++] = (uint)eTmp; break;
+                    }
+                    else if (!(f1Reverse ^ edgeReverse) && (int)ev.x == vCurrent) {
+                        vCurrent = ev.y; EV[nEV++] = (uint)eTmp; break;
+                    }
+                }
+            }
+            // 现在：VV 有 4 个，EV 有 4 个（f1 的环）
+
+            // ==== 扩展侧边：对 VV[0..3]，从 poly 的 EDGES 中找与之相连且未被使用的边 ====
+            for (int i = 0; i < 4; ++i) {
+                int vtx = (int)VV[i];
+                for (int t = 0; t < nEDGES; ++t) {
+                    uint e = EDGES[t];
+                    if (!contains_u(EV, nEV, e)) {
+                        uint2 ev = edgeVerts[e];
+                        if ((int)ev.x == vtx) {
+                            VV[nVV++] = ev.y; EV[nEV++] = e; break;
+                        }
+                        else if ((int)ev.y == vtx) {
+                            VV[nVV++] = ev.x; EV[nEV++] = e; break;
+                        }
+                    }
+                }
+            }
+            // 现在：VV 有 8 个，EV 有 8 个（加上 4 条“竖边”）
+
+            // ==== 面排序 ====
+            FV[nFV++] = (uint)f1;
+            FV[nFV++] = (uint)f2;
+
+            for (int i = 0; i < 4; ++i) {
+                int eNeed = (int)EV[i];
+                for (int fo = 0; fo < 6; ++fo) {
+                    uint f = (uint)FACES[fo];
+                    if (!contains_u(FV, nFV, f)) {
+                        // 看 f 是否含 eNeed
+                        bool hit = false;
+                        for (int eOff = 0; eOff < 4; ++eOff) {
+                            int fe = iabs(faceEdges[f * 4 + eOff]);
+                            if (fe == eNeed) {
+                                hit = true; break;
+                            }
+                        }
+                        if (hit) {
+                            FV[nFV++] = f;
+                            // 并把该面中“尚未加入 EV 的第一条边”加入 EV
+                            for (int eOff = 0; eOff < 4; ++eOff) {
+                                int fe = iabs(faceEdges[f * 4 + eOff]);
+                                if (!contains_u(EV, nEV, (uint)fe)) {
+                                    EV[nEV++] = (uint)fe;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // 现在：FV=6，EV=12，VV=8
+
+            // ==== 偏移到新点空间 ====
+            uint PV = (uint)p + pvOffset;
+            for (int i = 0; i < 6; ++i)  FV[i] += fvOffset;
+            for (int i = 0; i < 12; ++i)  EV[i] += evOffset;
+            for (int i = 0; i < 8; ++i)  VV[i] += vvOffset;
+
+            // ==== 写出 8 个六面体（严格保持你 CPU 版顺序）====
+            uint base = (uint)p * 64u;
+            // 1
+            out[base + 0] = VV[0]; out[base + 1] = EV[0]; out[base + 2] = FV[0]; out[base + 3] = EV[3];
+            out[base + 4] = EV[4]; out[base + 5] = FV[2]; out[base + 6] = PV;    out[base + 7] = FV[5];
+            // 2
+            out[base + 8] = EV[0]; out[base + 9] = VV[1]; out[base + 10] = EV[1]; out[base + 11] = FV[0];
+            out[base + 12] = FV[2]; out[base + 13] = EV[5]; out[base + 14] = FV[3]; out[base + 15] = PV;
+            // 3
+            out[base + 16] = FV[0]; out[base + 17] = EV[1]; out[base + 18] = VV[2]; out[base + 19] = EV[2];
+            out[base + 20] = PV;    out[base + 21] = FV[3]; out[base + 22] = EV[6]; out[base + 23] = FV[4];
+            // 4
+            out[base + 24] = EV[3]; out[base + 25] = FV[0]; out[base + 26] = EV[2]; out[base + 27] = VV[3];
+            out[base + 28] = FV[5]; out[base + 29] = PV;    out[base + 30] = FV[4]; out[base + 31] = EV[7];
+            // 5
+            out[base + 32] = EV[4]; out[base + 33] = FV[2]; out[base + 34] = PV;    out[base + 35] = FV[5];
+            out[base + 36] = VV[4]; out[base + 37] = EV[8]; out[base + 38] = FV[1]; out[base + 39] = EV[11];
+            // 6
+            out[base + 40] = FV[2]; out[base + 41] = EV[5]; out[base + 42] = FV[3]; out[base + 43] = PV;
+            out[base + 44] = EV[8]; out[base + 45] = VV[5]; out[base + 46] = EV[9]; out[base + 47] = FV[1];
+            // 7
+            out[base + 48] = PV;    out[base + 49] = FV[3]; out[base + 50] = EV[6]; out[base + 51] = FV[4];
+            out[base + 52] = FV[1]; out[base + 53] = EV[9]; out[base + 54] = VV[6]; out[base + 55] = EV[10];
+            // 8
+            out[base + 56] = FV[5]; out[base + 57] = PV;    out[base + 58] = FV[4]; out[base + 59] = EV[7];
+            out[base + 60] = EV[11]; out[base + 61] = FV[1]; out[base + 62] = EV[10]; out[base + 63] = VV[7];
+        }
+    };
+
+
     // ============ 主函数实现 ============
 
     void Patch::singlePatch::subdiv_cuda(std::vector<vec3d>& pos, std::vector<uint>& polys)
@@ -391,7 +594,6 @@ namespace cinolib {
         auto c_begin_p = thrust::make_counting_iterator<int>(0);
         auto c_begin_v = thrust::make_counting_iterator<int>(0);
 
-        auto computation_start = std::chrono::high_resolution_clock::now();
         // (1) 边心
         thrust::for_each(c_begin_e, c_begin_e + int(ne),
             EdgeCentroidOp(thrust::raw_pointer_cast(dEV.data()),
@@ -452,8 +654,6 @@ namespace cinolib {
                 thrust::raw_pointer_cast(d_PC.data()),
                 thrust::raw_pointer_cast(d_newVert.data())));
 
-        auto computation_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> computation_elapsed = computation_end - computation_start;
         // ----------- 把新点拷回主机并写入 pos -----------
         thrust::host_vector<dvec3> h_newPoly = d_newPoly;
         thrust::host_vector<dvec3> h_newFace = d_newFace;
@@ -473,170 +673,32 @@ namespace cinolib {
         for (const auto& v : h_newEdge) pos.push_back(to_h(v));
         for (const auto& v : h_newVert) pos.push_back(to_h(v));
 
-        auto topo_start = std::chrono::high_resolution_clock::now();
-        // ----------- 主机侧：复用你原先的拓扑装配逻辑 -----------
-        // 注意：这里使用已有的成员数组（edgeVerts/faceEdges/polyFaces/...）
-        //       以及我们刚刚计算好的偏移 pvOffset/fvOffset/evOffset/vvOffset。
+        // 设备侧输出（每 poly 64 个 uint）
+        thrust::device_vector<uint> d_topo(patchPolys * 64u);
 
-        std::vector<uint> tempPolys;
-        std::vector<uint> tempFaces;
-        std::vector<uint> tempEdges;
-        std::vector<uint> tempVerts;
-
-        std::vector<uint> FV(6);
-        std::vector<uint> EV(12);
-        std::vector<uint> VV(8);
-        bool f1Reverse = false;
-
-        for (int p = 0; p < int(patchPolys); ++p) {
-            int f1 = polyFaces[p * 6 + 0];
-            f1Reverse = false;
-            if (f1 < 0) { f1 = -f1 - 1; f1Reverse = true; }
-
-            tempEdges.clear();
-            for (int edgeOff = 0; edgeOff < 4; ++edgeOff) {
-                int e = faceEdges[f1 * 4 + edgeOff];
-                if (e < 0) e = -e - 1;
-                tempEdges.push_back(uint(e));
-            }
-
-            int f2 = -1;
-            for (int faceOff = 1; faceOff < 6; ++faceOff) {
-                int f = polyFaces[p * 6 + faceOff];
-                if (f < 0) f = -f - 1;
-                bool flag = true;
-                for (int edgeOff = 0; edgeOff < 4; ++edgeOff) {
-                    int e = faceEdges[f * 4 + edgeOff];
-                    if (e < 0) e = -e - 1;
-                    if (std::find(tempEdges.begin(), tempEdges.end(), uint(e)) != tempEdges.end()) {
-                        flag = false;
-                    }
-                }
-                if (flag) { f2 = f; break; }
-            }
-
-            tempVerts.clear();
-            tempEdges.clear();
-            tempFaces.clear();
-            for (int faceOff = 0; faceOff < 6; ++faceOff) {
-                int f = polyFaces[p * 6 + faceOff];
-                if (f < 0) f = -f - 1;
-                if (std::find(tempFaces.begin(), tempFaces.end(), uint(f)) == tempFaces.end()) {
-                    tempFaces.push_back(uint(f));
-                }
-                for (int edgeOff = 0; edgeOff < 4; ++edgeOff) {
-                    int e = faceEdges[f * 4 + edgeOff];
-                    if (e < 0) e = -e - 1;
-                    if (std::find(tempEdges.begin(), tempEdges.end(), uint(e)) == tempEdges.end()) {
-                        tempEdges.push_back(uint(e));
-                    }
-                    auto start = edgeVerts[e].x();
-                    auto end = edgeVerts[e].y();
-                    if (std::find(tempVerts.begin(), tempVerts.end(), start) == tempVerts.end()) tempVerts.push_back(start);
-                    if (std::find(tempVerts.begin(), tempVerts.end(), end) == tempVerts.end()) tempVerts.push_back(end);
-                }
-            }
-
-            FV.clear(); EV.clear(); VV.clear();
-            bool edgeReverse = false;
-            int vStart, vCurrent;
-            int eCurrent = faceEdges[f1 * 4 + 0];
-            if (eCurrent < 0) { eCurrent = -eCurrent - 1; edgeReverse = true; }
-
-            if ((f1Reverse ^ edgeReverse)) {
-                vStart = edgeVerts[eCurrent].y();
-                vCurrent = edgeVerts[eCurrent].x();
-            }
-            else {
-                vStart = edgeVerts[eCurrent].x();
-                vCurrent = edgeVerts[eCurrent].y();
-            }
-            VV.push_back(uint(vStart));
-            EV.push_back(uint(eCurrent));
-
-            while (vCurrent != vStart) {
-                VV.push_back(uint(vCurrent));
-                for (int eOff = 1; eOff < 4; ++eOff) {
-                    edgeReverse = false;
-                    eCurrent = faceEdges[f1 * 4 + eOff];
-                    if (eCurrent < 0) { eCurrent = -eCurrent - 1; edgeReverse = true; }
-                    if ((f1Reverse ^ edgeReverse) && int(edgeVerts[eCurrent].y()) == vCurrent) {
-                        vCurrent = edgeVerts[eCurrent].x();
-                        EV.push_back(uint(eCurrent));
-                        break;
-                    }
-                    else if (!(f1Reverse ^ edgeReverse) && int(edgeVerts[eCurrent].x()) == vCurrent) {
-                        vCurrent = edgeVerts[eCurrent].y();
-                        EV.push_back(uint(eCurrent));
-                        break;
-                    }
-                }
-            }
-
-            for (int i = 0; i < 4; ++i) {
-                vCurrent = int(VV[i]);
-                for (auto& e : tempEdges) {
-                    if (edgeVerts[e].x() == uint(vCurrent) &&
-                        std::find(EV.begin(), EV.end(), e) == EV.end()) {
-                        VV.push_back(edgeVerts[e].y());
-                        EV.push_back(e);
-                        break;
-                    }
-                    else if (edgeVerts[e].y() == uint(vCurrent) &&
-                        std::find(EV.begin(), EV.end(), e) == EV.end()) {
-                        VV.push_back(edgeVerts[e].x());
-                        EV.push_back(e);
-                        break;
-                    }
-                }
-            }
-
-            FV.push_back(uint(f1));
-            FV.push_back(uint(f2));
-
-            for (int i = 0; i < 4; ++i) {
-                eCurrent = int(EV[i]);
-                for (auto& f : tempFaces) {
-                    if (std::find(FV.begin(), FV.end(), f) == FV.end()) {
-                        for (int eOff = 0; eOff < 4; ++eOff) {
-                            int fe = faceEdges[f * 4 + eOff];
-                            if (fe < 0) fe = -fe - 1;
-                            if (fe == eCurrent) {
-                                FV.push_back(f);
-                                for (int eOff2 = 0; eOff2 < 4; ++eOff2) {
-                                    fe = faceEdges[f * 4 + eOff2];
-                                    if (fe < 0) fe = -fe - 1;
-                                    if (std::find(EV.begin(), EV.end(), uint(fe)) == EV.end()) {
-                                        EV.push_back(uint(fe));
-                                        break;
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            uint PV = uint(p) + pvOffset;
-            for (int i = 0; i<int(FV.size()); ++i) FV[i] += fvOffset;
-            for (int i = 0; i<int(EV.size()); ++i) EV[i] += evOffset;
-            for (int i = 0; i<int(VV.size()); ++i) VV[i] += vvOffset;
-
-            polys.insert(polys.end(), { VV[0], EV[0], FV[0], EV[3], EV[4], FV[2], PV,    FV[5] });
-            polys.insert(polys.end(), { EV[0], VV[1], EV[1], FV[0], FV[2], EV[5], FV[3], PV });
-            polys.insert(polys.end(), { FV[0], EV[1], VV[2], EV[2], PV,    FV[3], EV[6], FV[4] });
-            polys.insert(polys.end(), { EV[3], FV[0], EV[2], VV[3], FV[5], PV,    FV[4], EV[7] });
-
-            polys.insert(polys.end(), { EV[4], FV[2], PV,    FV[5], VV[4], EV[8], FV[1], EV[11] });
-            polys.insert(polys.end(), { FV[2], EV[5], FV[3], PV,    EV[8], VV[5], EV[9], FV[1] });
-            polys.insert(polys.end(), { PV,    FV[3], EV[6], FV[4], FV[1], EV[9], VV[6], EV[10] });
-            polys.insert(polys.end(), { FV[5], PV,    FV[4], EV[7], EV[11],FV[1], EV[10],VV[7] });
+        // 需要把 edgeVerts（std::vector<vec2u>）转成 device 侧 uint2
+        thrust::host_vector<uint2> hEV2(edgeVerts.size());
+        for (size_t e = 0; e < edgeVerts.size(); ++e) {
+            hEV2[e] = make_uint2(edgeVerts[e].x(), edgeVerts[e].y());
         }
+        thrust::device_vector<uint2> dEV2 = hEV2;
 
-        auto topo_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> topo_elapsed = topo_end - topo_start;
-        std::cout << ", computation: " << computation_elapsed.count() << " ms, topo: " << topo_elapsed.count() << " ms" << std::endl;
+        // 并行装配（每 poly 一个线程）
+        auto c_begin_p2 = thrust::make_counting_iterator<int>(0);
+        thrust::for_each(c_begin_p2, c_begin_p2 + int(patchPolys),
+            TopoAssembleOp(
+                thrust::raw_pointer_cast(d_polyFaces.data()),
+                thrust::raw_pointer_cast(d_faceEdges.data()),
+                thrust::raw_pointer_cast(dEV2.data()),
+                pvOffset, fvOffset, evOffset, vvOffset,
+                thrust::raw_pointer_cast(d_topo.data())
+            )
+        );
+
+        // 回拷并追加到 polys（顺序稳定：p=0..patchPolys-1）
+        thrust::host_vector<uint> h_topo = d_topo;
+        polys.reserve(polys.size() + h_topo.size());
+        polys.insert(polys.end(), h_topo.begin(), h_topo.end());
     }
     
     static inline dvec3 to_d(const vec3d& v) {
