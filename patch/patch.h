@@ -1,9 +1,22 @@
 #pragma once
 #include <string>
 #include <cinolib/meshes/meshes.h>
+
+#define USE_CUDA
+#define TEST
+#define DRAW
+//#define DEBUG
+#define OUTPUT
+//#define DETAIL
+//#define OUTPUT_DETAIL
+
+#define POLYS_PER_CLUSTER 512
+#define root std::string(DATA_PATH)
+
 namespace cinolib
 {
 	extern float cuda_elapsed;
+	extern float cpu_elapsed;
 
 	class Patch
 	{
@@ -56,7 +69,7 @@ namespace cinolib
 		void Patch::subdiv(int subdiv_times);
 
 		// 用于各块操作后，合并容差范围内的点
-		void deduplicate_points_and_remap_hex(std::vector<vec3d>& points, std::vector<uint>& hex_idx, double tol);
+		void deduplicate_points_and_remap_hex(std::vector<vec3d>& points, std::vector<uint>& hex_idx, double tol = 1e-6);
 		Hexmesh<> getMesh() { return mesh; }
 
 	private:

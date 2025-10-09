@@ -8,11 +8,12 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_ARCHITECTURES 86)
 
 add_executable(${PROJECT_NAME}
+    main.cpp
     patch.cpp
     kmeans.cpp
     cc_subdiv_gpu.cu   
     #cc_subdiv_gpu_prototype.cu       
-)
+ "main.cpp")
 
 # 对多翻译单元/模板友好
 set_target_properties(${PROJECT_NAME} PROPERTIES

@@ -17,21 +17,10 @@
 #include <functional>
 #include <chrono>
 
-#define USE_CUDA
-//#define TEST
-#define DRAW
-//#define DEBUG
-#define OUTPUT
-//#define DETAIL
-//#define OUTPUT_DETAIL
-
-#define POLYS_PER_CLUSTER 512
-std::string root(DATA_PATH);
 
 namespace cinolib {
-#ifdef USE_CUDA
 	float cuda_elapsed = 0.0;
-#endif
+	float cpu_elapsed = 0.0;
 
 	Patch::Patch() {}
 
@@ -61,82 +50,158 @@ namespace cinolib {
 		return mesh.poly_face_is_CCW(pid, fid);
 	}
 
-	struct Array3LLHash {
-		std::size_t operator()(const std::array<long long, 3>& a) const noexcept {
-			auto h0 = std::hash<long long>{}(a[0]);
-			auto h1 = std::hash<long long>{}(a[1]);
-			auto h2 = std::hash<long long>{}(a[2]);
-			// 64-bit 混合
-			h0 ^= h1 + 0x9e3779b97f4a7c15ULL + (h0 << 6) + (h0 >> 2);
-			h0 ^= h2 + 0x9e3779b97f4a7c15ULL + (h0 << 6) + (h0 >> 2);
-			return h0;
-		}
-	};
+	void Patch::deduplicate_points_and_remap_hex(
+    std::vector<vec3d>& points,
+    std::vector<uint32_t>& hex_idx,
+    double tol)
+{
+    assert(tol > 0.0 && !points.empty());
+    const double cell = tol;            // 网格尺寸
+    const double tol2 = tol * tol;
 
-	static inline double sqr(double v) { return v * v; }
+    auto dist2 = [&](uint32_t i, uint32_t j) {
+        const auto &a = points[i], &b = points[j];
+        const double dx = a.x() - b.x();
+        const double dy = a.y() - b.y();
+        const double dz = a.z() - b.z();
+        return dx*dx + dy*dy + dz*dz;
+    };
 
-	void Patch::deduplicate_points_and_remap_hex(std::vector<vec3d>& points, std::vector<uint>& hex_idx, double tol = 1e-6) {
-		assert(tol > 0.0 && !points.empty());
-		const double inv_tol = 1.0 / tol;
-		const double tol2 = tol * tol;
-		// 栅格：key 为量化后的格子坐标；value 存该格子的“代表点”在 uniques 中的索引
-		std::unordered_map<std::array<long long, 3>, std::vector<uint>, Array3LLHash> grid;
-		grid.reserve(points.size() * 2);
+    using Key = std::array<long long,3>;
+    struct KeyHash {
+        size_t operator()(const Key& k) const noexcept {
+            // 简易哈希
+            uint64_t h = 1469598103934665603ull;
+            auto mix = [&](long long v){
+                uint64_t x = static_cast<uint64_t>(v) * 1099511628211ull;
+                h ^= x + 0x9e3779b97f4a7c15ull + (h<<6) + (h>>2);
+            };
+            mix(k[0]); mix(k[1]); mix(k[2]);
+            return static_cast<size_t>(h);
+        }
+    };
 
-		std::vector<vec3d> uniques;
-		uniques.reserve(points.size());
-		std::vector<uint> old2new(points.size(), -1);
+    auto quantize = [&](const vec3d& p)->Key {
+        // floor 量化，比 round 更可控；容差覆盖靠查 27 邻居保证
+        return Key{
+            static_cast<long long>(std::floor(p.x()/cell)),
+            static_cast<long long>(std::floor(p.y()/cell)),
+            static_cast<long long>(std::floor(p.z()/cell))
+        };
+    };
 
-		auto quantize = [&](const vec3d& p) {
-			// 用 llround 对边界更稳健
-			return std::array<long long, 3>{
-				static_cast<long long>(llround(p.x()* inv_tol)),
-					static_cast<long long>(llround(p.y()* inv_tol)),
-					static_cast<long long>(llround(p.z()* inv_tol))
-			};
-		};
+    // 1) 建桶：格子 -> 原始点索引列表
+    std::unordered_map<Key, std::vector<uint32_t>, KeyHash> grid;
+    grid.reserve(points.size());
+    for (uint32_t i = 0; i < points.size(); ++i) {
+        grid[quantize(points[i])].push_back(i);
+    }
 
-		auto dist2 = [&](const vec3d& a, const vec3d& b) {
-			return sqr(a.x() - b.x()) + sqr(a.y() - b.y()) + sqr(a.z() - b.z());
-		};
+    // 2) 并查集
+    struct DSU {
+        std::vector<uint32_t> p, r;
+        explicit DSU(size_t n): p(n), r(n,0){ std::iota(p.begin(), p.end(), 0u); }
+        uint32_t find(uint32_t x){ return p[x]==x? x: p[x]=find(p[x]); }
+        void unite(uint32_t a, uint32_t b){
+            a = find(a); b = find(b);
+            if (a==b) return;
+            if (r[a] < r[b]) std::swap(a,b);
+            p[b] = a;
+            if (r[a]==r[b]) ++r[a];
+        }
+    } dsu(points.size());
 
-		// 建立代表点并填 old2new
-		for (int i = 0; i < static_cast<int>(points.size()); ++i) {
-			const vec3d& p = points[i];
-			const auto base = quantize(p);
+    // 只与“本格及其上三角邻格”做比较，避免重复
+    const int off[14][3] = {
+        {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1},
+        {1,1,0}, {1,0,1}, {0,1,1}, {1,1,1},
+        {-1,1,0}, {-1,0,1}, {0,-1,1},
+        {1,-1,0}, {0,1,-1}, {1,0,-1}
+    };
 
-			int mapped = -1;
-			for (int dx = -1; dx <= 1 && mapped < 0; ++dx) {
-				for (int dy = -1; dy <= 1 && mapped < 0; ++dy) {
-					for (int dz = -1; dz <= 1 && mapped < 0; ++dz) {
-						std::array<long long, 3> key{ base[0] + dx, base[1] + dy, base[2] + dz };
-						auto it = grid.find(key);
-						if (it == grid.end()) continue;
+    for (const auto& kv : grid) {
+        const Key& base = kv.first;
+        const auto& A = kv.second;
 
-						for (int rep : it->second) {
-							if (dist2(p, uniques[rep]) <= tol2) {
-								mapped = rep;
-								break;
-							}
-						}
-					}
-				}
-			}
+        // 同格：上三角配对
+        for (size_t i = 0; i < A.size(); ++i)
+            for (size_t j = i+1; j < A.size(); ++j)
+                if (dist2(A[i], A[j]) <= tol2) dsu.unite(A[i], A[j]);
 
-			if (mapped < 0) {
-				// 新代表点
-				mapped = static_cast<int>(uniques.size());
-				uniques.push_back(p);
-				grid[base].push_back(mapped);
-			}
-			old2new[i] = mapped;
-		}
+        // 邻格：只取“半空间”方向，避免双计
+        for (const auto& d : off) {
+            if (d[0]==0 && d[1]==0 && d[2]==0) continue;
+            Key nb{ base[0]+d[0], base[1]+d[1], base[2]+d[2] };
+            auto it = grid.find(nb);
+            if (it == grid.end()) continue;
+            const auto& B = it->second;
+            for (uint32_t i : A)
+                for (uint32_t j : B)
+                    if (dist2(i, j) <= tol2) dsu.unite(i, j);
+        }
+    }
 
-		for (auto& idx : hex_idx) {
-			idx = old2new[idx];
-		}
-		points.assign(uniques.begin(), uniques.end());
-	}
+    // 3) 建 old->new 映射，并生成唯一点（这里取分量中的“第一个出现者”作为代表；
+    //    若想几何更平滑，可改成分量质心）
+    std::vector<int> root2new(points.size(), -1);
+    std::vector<uint32_t> old2new(points.size(), 0);
+    std::vector<vec3d> uniques; uniques.reserve(points.size());
+
+    for (uint32_t i = 0; i < points.size(); ++i) {
+        uint32_t r = dsu.find(i);
+        int &id = root2new[r];
+        if (id < 0) {
+            id = static_cast<int>(uniques.size());
+            uniques.push_back(points[r]); // 或改成累计质心
+        }
+        old2new[i] = static_cast<uint32_t>(id);
+    }
+
+    // 4) 重映射并过滤退化六面体（8 节点）
+    if (hex_idx.size() % 8 != 0) {
+        // 这里也可直接 assert/throw
+        // 为稳健起见，只处理完整的 8 的倍数部分
+    }
+
+    std::vector<uint32_t> new_hex;
+    new_hex.reserve(hex_idx.size());
+
+    auto is_degenerate_hex = [&](const uint32_t *v)->bool{
+        // 判断 8 个索引是否有重复
+        uint32_t s[8];
+        for (int i=0;i<8;++i) s[i]=v[i];
+        std::sort(s, s+8);
+        return std::unique(s, s+8) != (s+8);
+    };
+
+    for (size_t i = 0; i + 7 < hex_idx.size(); i += 8) {
+        uint32_t v[8];
+        bool ok = true;
+        for (int k=0;k<8;++k) {
+            uint32_t oi = hex_idx[i+k];
+            if (oi >= old2new.size()) { ok = false; break; } // 非法索引保护
+            v[k] = old2new[oi];
+        }
+        if (!ok) continue;
+        if (is_degenerate_hex(v)) continue; // 跳过退化单元
+        for (int k=0;k<8;++k) new_hex.push_back(v[k]);
+    }
+
+    // 5) （可选）按 new_hex 实际使用的点再做一次“压缩”
+    std::vector<char> used(uniques.size(), 0);
+    for (uint32_t id : new_hex) used[id] = 1;
+    std::vector<uint32_t> comp(uniques.size(), 0);
+    std::vector<vec3d> compact_pts; compact_pts.reserve(uniques.size());
+    for (uint32_t i=0;i<uniques.size();++i) if (used[i]) {
+        comp[i] = static_cast<uint32_t>(compact_pts.size());
+        compact_pts.push_back(uniques[i]);
+    }
+    for (uint32_t &id : new_hex) id = comp[id];
+
+    points.swap(compact_pts);
+    hex_idx.swap(new_hex);
+}
+
 
 	void Patch::patching(int num_clusters) {
 
@@ -566,10 +631,10 @@ namespace cinolib {
 			patching(num_clusters);
 			auto patching_end = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double, std::milli> elapsed = patching_end - patching_start;
-			std::cout << "patching complete. Time cost: " << elapsed.count() << " ms\n" << std::endl;
+			std::cout << "patching complete. Time cost: " << elapsed.count() << " ms" << std::endl;
 
 			int temp = 0;
-			std::cout << std::endl << "subdivision start." << std::endl;
+			std::cout << "subdivision start." << std::endl;
 
 			for (singlePatch patch : patches) {
 				std::cout << "subdiving patch: " << temp++ << std::endl;
@@ -579,9 +644,12 @@ namespace cinolib {
 				patch.subdiv(pos, polys);
 #endif
 			}
+#ifdef USE_CUDA
 			std::cout << "subdivision complete. Time cost: " << cuda_elapsed << " ms\n" << std::endl;
+#else
+			std::cout << "subdivision complete. Time cost: " << cpu_elapsed << " ms\n" << std::endl;
+#endif
 			deduplicate_points_and_remap_hex(pos, polys);
-			mesh = Hexmesh<>(pos, polys);
 			if (i == subdiv_times) {
 #ifdef DRAW
 				DrawableHexmesh<> newMesh(pos, polys);
@@ -590,12 +658,30 @@ namespace cinolib {
 				gui.launch();
 #endif
 			}
-			pos.clear();
-			polys.clear();
+			else {
+				mesh = Hexmesh<>(pos, polys);
+				pos.clear();
+				polys.clear();
+			}
 		}
 #ifdef OUTPUT
 		std::string outPath = root + "/output/subdiv_result.mesh";
-		mesh.save(outPath.c_str());
+		std::ofstream outMesh(outPath);
+		outMesh << "MeshVersionFormatted 1\nDimension 3\nVertices\n" << pos.size() << "\n";
+		for (auto p : pos) {
+			outMesh << p.x() << " " << p.y() << " " << p.z() << " 0\n";
+		}
+		outMesh << "Hexahedra\n" << polys.size() / 8 << "\n";
+		int count = 0;
+		for(auto p:polys) {
+			outMesh << p + 1 << " ";
+			count++;
+			if (count == 8) {
+				count = 0;
+				outMesh << "0\n";
+			}
+		}
+		outMesh << "End";
 #endif
 	}
 
@@ -628,6 +714,7 @@ namespace cinolib {
 		std::vector<uint> tempEdges;
 		std::vector<uint> tempVerts;
 
+		auto cpu_start = std::chrono::high_resolution_clock::now();
 		//求边的中点
 		for (int e = 0; e < ne; e++) {
 			auto start = edgeVerts[e].x();
@@ -864,6 +951,9 @@ namespace cinolib {
 				newVertVerts.push_back(newVertVert);
 			}
 		}
+		auto cpu_end = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> elapsed = cpu_end - cpu_start;
+		cpu_elapsed += elapsed.count();
 
 #ifdef OUTPUT
 		static int count = 0;
@@ -908,6 +998,7 @@ namespace cinolib {
 		std::vector<uint> VV(8);
 		bool f1Reverse = false;
 
+		cpu_start = std::chrono::high_resolution_clock::now();
 		for (int p = 0; p < patchPolys; p++) {
 			// 1.找到两个相对的面
 			int f1, f2;
@@ -1106,28 +1197,14 @@ namespace cinolib {
 			polys.insert(polys.end(), { PV, FV[3], EV[6], FV[4], FV[1], EV[9], VV[6], EV[10] });
 			polys.insert(polys.end(), { FV[5], PV, FV[4], EV[7], EV[11], FV[1], EV[10], VV[7] });
 		}
+		cpu_end = std::chrono::high_resolution_clock::now();
+		elapsed = cpu_end - cpu_start;
+		cpu_elapsed += elapsed.count();
 	}
 
 	inline void PrintVec3d(vec3d& v) {
 		std::cout << std::endl << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
 	}
 };
-
-int main() {
-#ifdef USE_CUDA
-	if (!cuda::init()) {
-		std::cout << "cuda init error" << std::endl;
-	}
-#endif
-#ifdef TEST
-	cinolib::Patch patch(root + "/input/block.mesh");
-	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.subdiv(3);
-#else
-	cinolib::Patch patch(root + "/input/bunny_hex.mesh");
-	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.subdiv(1);
-#endif
-}
 
 
