@@ -63,8 +63,11 @@ namespace cinolib
 
 		bool getFaceEdgeSign(uint eid, uint fid);
 		bool getPolyFaceSign(uint fid, uint pid);
-
 	};
 
 	inline void PrintVec3d(vec3d& v);
+}
+
+namespace cuda {
+	bool init(int device_id = 0);
 }

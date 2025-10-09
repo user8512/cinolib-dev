@@ -25,7 +25,7 @@ find_package(cinolib REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE cinolib CUDA::cudart)
 
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda")
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     DATA_PATH="../../../data"

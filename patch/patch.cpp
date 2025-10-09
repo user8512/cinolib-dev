@@ -17,13 +17,13 @@
 #include <functional>
 #include <chrono>
 
-//#define TEST
+#define USE_CUDA
+#define TEST
 #define DRAW
 //#define DEBUG
 //#define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
-//#define USE_CUDA
 
 #define POLYS_PER_CLUSTER 512
 std::string root(DATA_PATH);
@@ -575,8 +575,6 @@ namespace cinolib {
 			std::cout << "subdivision complete. Time cost: " << elapsed.count() << " ms\n" << std::endl;
 			deduplicate_points_and_remap_hex(pos, polys);
 			mesh = Hexmesh<>(pos, polys);
-			pos.clear();
-			polys.clear();
 			if (i == subdiv_times) {
 #ifdef DRAW
 				DrawableHexmesh<> newMesh(pos, polys);
@@ -585,6 +583,8 @@ namespace cinolib {
 				gui.launch();
 #endif
 			}
+			pos.clear();
+			polys.clear();
 		}
 #ifdef OUTPUT
 		std::string outPath = root + "/output/subdiv_result.mesh";
@@ -1107,14 +1107,19 @@ namespace cinolib {
 };
 
 int main() {
+#ifdef USE_CUDA
+	if (!cuda::init()) {
+		std::cout << "cuda init error" << std::endl;
+	}
+#endif
 #ifdef TEST
 	cinolib::Patch patch(root + "/input/block.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.subdiv(5);
+	patch.subdiv(3);
 #else
 	cinolib::Patch patch(root + "/input/rockerarm.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.subdiv(1);
+	patch.subdiv(2);
 #endif
 }
 

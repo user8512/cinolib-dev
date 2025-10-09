@@ -1,4 +1,4 @@
-#define CINO_STATIC_LIB
+ï»¿#define CINO_STATIC_LIB
 #include "patch.h"
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <chrono>
+#include <iostream>
 
 namespace cinolib {
     struct dvec3 {
@@ -34,9 +35,9 @@ namespace cinolib {
     static inline vec3d to_h(const dvec3& v);
 
     struct EdgeCentroidOp {
-        const uint2* EV;             // edgeVerts, Ã¿Ìõ±ßÁ½¸ö¶ËµãµÄ¾Ö²¿¶¥µãË÷Òı
-        const dvec3* Vpos;           // ¾É¶¥µã×ø±ê£¨¾Ö²¿£©
-        dvec3* Ecentroids;     // Êä³ö
+        const uint2* EV;             // edgeVerts, æ¯æ¡è¾¹ä¸¤ä¸ªç«¯ç‚¹çš„å±€éƒ¨é¡¶ç‚¹ç´¢å¼•
+        const dvec3* Vpos;           // æ—§é¡¶ç‚¹åæ ‡ï¼ˆå±€éƒ¨ï¼‰
+        dvec3* Ecentroids;     // è¾“å‡º
         __host__ __device__
             EdgeCentroidOp(const uint2* ev, const dvec3* vp, dvec3* out)
             : EV(ev), Vpos(vp), Ecentroids(out) {}
@@ -49,9 +50,9 @@ namespace cinolib {
         }
     };
 
-    // 2) ÃæÖÊĞÄ£ºface ÊÇËÄÌõ±ßµÄÆ½¾ù£¨±ßĞÄÆ½¾ù£©
+    // 2) é¢è´¨å¿ƒï¼šface æ˜¯å››æ¡è¾¹çš„å¹³å‡ï¼ˆè¾¹å¿ƒå¹³å‡ï¼‰
     struct FaceCentroidOp {
-        const int* faceEdges; // ³¤¶È nf*4
+        const int* faceEdges; // é•¿åº¦ nf*4
         const dvec3* Ecentroids;
         dvec3* Fcentroids;
         __host__ __device__
@@ -69,9 +70,9 @@ namespace cinolib {
         }
     };
 
-    // 3) ÌåÖÊĞÄ£ºpoly ÊÇÁù¸öÃæµÄÆ½¾ù£¨ÃæĞÄÆ½¾ù£©
+    // 3) ä½“è´¨å¿ƒï¼špoly æ˜¯å…­ä¸ªé¢çš„å¹³å‡ï¼ˆé¢å¿ƒå¹³å‡ï¼‰
     struct PolyCentroidOp {
-        const int* polyFaces; // ³¤¶È np*6
+        const int* polyFaces; // é•¿åº¦ np*6
         const dvec3* Fcentroids;
         dvec3* Pcentroids;
         __host__ __device__
@@ -89,7 +90,7 @@ namespace cinolib {
         }
     };
 
-    // 4) ĞÂÃæµã
+    // 4) æ–°é¢ç‚¹
     struct NewFaceVertOp {
         const uint8_t* faceOnSurf;
         const uint* facePolysOffset;
@@ -117,9 +118,9 @@ namespace cinolib {
         }
     };
 
-    // 5) ĞÂ±ßµã£¨º¬±ß½ç/ÄÚ²¿Á½ÖÖ¹æÔò£©
-    // ËµÃ÷£ºÓÉÓÚÒª×öĞ¡¹æÄ£µÄ¡°ÁÚ½Ó¾ÛºÏ + È¥ÖØ¡±£¬ÔÚÃ¿¸öÏß³ÌÓÃ¹Ì¶¨Ğ¡Êı×é¡£
-    //      ãĞÖµ¸ø 32£¬ÈôÕæÊµÁÚ½Ó³¬¹ıÔò½Ø¶Ï£¨¼«ÉÙ¼ûµÄÒì³£Íø¸ñ£©¡£
+    // 5) æ–°è¾¹ç‚¹ï¼ˆå«è¾¹ç•Œ/å†…éƒ¨ä¸¤ç§è§„åˆ™ï¼‰
+    // è¯´æ˜ï¼šç”±äºè¦åšå°è§„æ¨¡çš„â€œé‚»æ¥èšåˆ + å»é‡â€ï¼Œåœ¨æ¯ä¸ªçº¿ç¨‹ç”¨å›ºå®šå°æ•°ç»„ã€‚
+    //      é˜ˆå€¼ç»™ 32ï¼Œè‹¥çœŸå®é‚»æ¥è¶…è¿‡åˆ™æˆªæ–­ï¼ˆæå°‘è§çš„å¼‚å¸¸ç½‘æ ¼ï¼‰ã€‚
     struct NewEdgeVertOp {
         const uint8_t* edgeOnSurf;
         const uint8_t* faceOnSurf;
@@ -153,13 +154,13 @@ namespace cinolib {
             int N = int(end - begin);
 
             if (!edgeOnSurf[e]) {
-                // ÊÕ¼¯ÏàÁÚÃæ
+                // æ”¶é›†ç›¸é‚»é¢
                 int faces[32]; int nf = 0;
                 for (int i = 0; i < N && nf < 32; ++i) {
                     int f = idx_abs(edgeFaces[begin + i]);
                     faces[nf++] = f;
                 }
-                // ´ÓÏàÁÚÃæÊÕ¼¯Ìå²¢È¥ÖØ
+                // ä»ç›¸é‚»é¢æ”¶é›†ä½“å¹¶å»é‡
                 int polys[32]; int np = 0;
                 for (int i = 0; i < nf; ++i) {
                     int f = faces[i];
@@ -172,7 +173,7 @@ namespace cinolib {
                         if (!seen && np < 32) polys[np++] = p;
                     }
                 }
-                // Æ½¾ù
+                // å¹³å‡
                 dvec3 faceAvg(0, 0, 0);
                 for (int i = 0; i < nf; ++i) faceAvg += Fcentroids[faces[i]];
                 if (nf > 0) faceAvg /= double(nf);
@@ -204,7 +205,7 @@ namespace cinolib {
         }
     };
 
-    // 6) ĞÂ¶¥µã
+    // 6) æ–°é¡¶ç‚¹
     struct NewVertVertOp {
         const uint8_t* vertOnSurf;
         const uint8_t* edgeOnSurf;
@@ -247,7 +248,7 @@ namespace cinolib {
             int N = int(end - begin);
 
             if (!vertOnSurf[v]) {
-                // ÊÕ¼¯±ß/Ãæ/Ìå£¨È¥ÖØ£©
+                // æ”¶é›†è¾¹/é¢/ä½“ï¼ˆå»é‡ï¼‰
                 int edges[32]; int ne = 0;
                 int faces[32]; int nf = 0;
                 int polys[32]; int np = 0;
@@ -255,7 +256,7 @@ namespace cinolib {
                 for (int i = 0; i < N && ne < 32; ++i) {
                     int e = idx_abs(vertEdges[begin + i]);
                     edges[ne++] = e;
-                    // ¾­±ßÕÒÃæ
+                    // ç»è¾¹æ‰¾é¢
                     uint eb = edgeFacesOffset[e];
                     uint ee = edgeFacesOffset[e + 1];
                     for (uint j = eb; j < ee; ++j) {
@@ -263,7 +264,7 @@ namespace cinolib {
                         bool seen = false;
                         for (int t = 0; t < nf; ++t) if (faces[t] == f) { seen = true; break; }
                         if (!seen && nf < 32) faces[nf++] = f;
-                        // ¾­ÃæÕÒÌå
+                        // ç»é¢æ‰¾ä½“
                         uint fb = facePolysOffset[f];
                         uint fe = facePolysOffset[f + 1];
                         for (uint k = fb; k < fe; ++k) {
@@ -290,7 +291,7 @@ namespace cinolib {
                 outNewV[v] = vnew / 8.0;
             }
             else {
-                // ±ß½çµã£ºÖ»¿¼ÂÇ±ß½ç±ß/Ãæ
+                // è¾¹ç•Œç‚¹ï¼šåªè€ƒè™‘è¾¹ç•Œè¾¹/é¢
                 int edgesB[32]; int ne = 0;
                 int facesB[32]; int nf = 0;
 
@@ -319,7 +320,7 @@ namespace cinolib {
                 for (int i = 0; i < nf; ++i) faceAvg += Fcentroids[facesB[i]];
                 if (nf > 0) faceAvg /= double(nf);
 
-                int n = ne; // Ö»¿¼ÂÇ±ß½ç±ßµÄ¶È
+                int n = ne; // åªè€ƒè™‘è¾¹ç•Œè¾¹çš„åº¦
                 dvec3 vnew = faceAvg + (edgeAvg * 2.0) + (Vpos[v] * double(n - 3));
                 if (n > 0) vnew /= double(n);
                 outNewV[v] = vnew;
@@ -327,16 +328,16 @@ namespace cinolib {
         }
     };
 
-    // 7£© Ã¿¸öÔ­ poly ×°Åä 8 ¸öĞÂÁùÃæÌå£¨64 ¸öË÷Òı£©
+    // 7ï¼‰ æ¯ä¸ªåŸ poly è£…é… 8 ä¸ªæ–°å…­é¢ä½“ï¼ˆ64 ä¸ªç´¢å¼•ï¼‰
     struct TopoAssembleOp {
-        // ¶Á
-        const int* polyFaces;   // np*6 (´ø·ûºÅ)
-        const int* faceEdges;   // nf*4 (´ø·ûºÅ)
-        const uint2* edgeVerts;   // ne Ìõ±ßµÄ¶Ëµã
-        // Æ«ÒÆ
+        // è¯»
+        const int* polyFaces;   // np*6 (å¸¦ç¬¦å·)
+        const int* faceEdges;   // nf*4 (å¸¦ç¬¦å·)
+        const uint2* edgeVerts;   // ne æ¡è¾¹çš„ç«¯ç‚¹
+        // åç§»
         const uint    pvOffset, fvOffset, evOffset, vvOffset;
-        // Ğ´
-        uint* out;         // ´óĞ¡ patchPolys*64
+        // å†™
+        uint* out;         // å¤§å° patchPolys*64
 
         __host__ __device__
             TopoAssembleOp(const int* pf, const int* fe, const uint2* ev,
@@ -358,31 +359,31 @@ namespace cinolib {
 
         __host__ __device__
             void operator()(const int p) const {
-            // ±¾µØĞ¡Êı×é
+            // æœ¬åœ°å°æ•°ç»„
             uint VV[8];  int nVV = 0;
             uint EV[12]; int nEV = 0;
             uint FV[6];  int nFV = 0;
 
-            // È¡ poly µÄ 6 ¸öÃæ£¨¾ø¶ÔÖµ£©
+            // å– poly çš„ 6 ä¸ªé¢ï¼ˆç»å¯¹å€¼ï¼‰
             int FACES[6];
 #pragma unroll
             for (int fo = 0; fo < 6; ++fo) {
                 FACES[fo] = iabs(polyFaces[p * 6 + fo]);
             }
 
-            // f1 = polyFaces[p*6]£¬¼ÇÂ¼·´Ïò
+            // f1 = polyFaces[p*6]ï¼Œè®°å½•åå‘
             int raw_f1 = polyFaces[p * 6 + 0];
             bool f1Reverse = (raw_f1 < 0);
             int f1 = iabs(raw_f1);
 
-            // f1 µÄ 4 Ìõ±ß£¨¾ø¶ÔÖµ£©
+            // f1 çš„ 4 æ¡è¾¹ï¼ˆç»å¯¹å€¼ï¼‰
             int F1E[4];
 #pragma unroll
             for (int eOff = 0; eOff < 4; ++eOff) {
                 F1E[eOff] = iabs(faceEdges[f1 * 4 + eOff]);
             }
 
-            // ÕÒ f2£¨Óë f1 ÎŞ¹²Ïí±ßµÄÄÇ¸öÃæ£»°´ faceOff=1..5 µÄË³ĞòÈ¡¡°µÚÒ»¸öÂú×ãÕß¡±£©
+            // æ‰¾ f2ï¼ˆä¸ f1 æ— å…±äº«è¾¹çš„é‚£ä¸ªé¢ï¼›æŒ‰ faceOff=1..5 çš„é¡ºåºå–â€œç¬¬ä¸€ä¸ªæ»¡è¶³è€…â€ï¼‰
             int f2 = -1;
             for (int fo = 1; fo < 6; ++fo) {
                 int f = FACES[fo];
@@ -396,7 +397,7 @@ namespace cinolib {
                 if (!share) { f2 = f; break; }
             }
 
-            // ÊÕ¼¯¸Ã poly µÄËùÓĞ±ß£¨È¥ÖØ£©
+            // æ”¶é›†è¯¥ poly çš„æ‰€æœ‰è¾¹ï¼ˆå»é‡ï¼‰
             uint EDGES[12]; int nEDGES = 0;
             for (int fo = 0; fo < 6; ++fo) {
                 int f = FACES[fo];
@@ -409,7 +410,7 @@ namespace cinolib {
                 }
             }
 
-            // ==== ¶Ô f1 ÈÆ±ßÅÅĞò VV/EV£¨ÑÏ¸ñ¸´¿Ì CPU Âß¼­£©====
+            // ==== å¯¹ f1 ç»•è¾¹æ’åº VV/EVï¼ˆä¸¥æ ¼å¤åˆ» CPU é€»è¾‘ï¼‰====
             bool edgeReverse = false;
             int eCurrent = faceEdges[f1 * 4 + 0];
             if (eCurrent < 0) { eCurrent = -eCurrent - 1; edgeReverse = true; }
@@ -427,7 +428,7 @@ namespace cinolib {
 
             while (vCurrent != vStart) {
                 VV[nVV++] = (uint)vCurrent;
-                // ÔÚ f1 µÄÆäÓàÈıÌõ±ßÖĞÕÒÏÂÒ»Ìõ
+                // åœ¨ f1 çš„å…¶ä½™ä¸‰æ¡è¾¹ä¸­æ‰¾ä¸‹ä¸€æ¡
                 for (int eOff = 1; eOff < 4; ++eOff) {
                     edgeReverse = false;
                     int eTmp = faceEdges[f1 * 4 + eOff];
@@ -441,9 +442,9 @@ namespace cinolib {
                     }
                 }
             }
-            // ÏÖÔÚ£ºVV ÓĞ 4 ¸ö£¬EV ÓĞ 4 ¸ö£¨f1 µÄ»·£©
+            // ç°åœ¨ï¼šVV æœ‰ 4 ä¸ªï¼ŒEV æœ‰ 4 ä¸ªï¼ˆf1 çš„ç¯ï¼‰
 
-            // ==== À©Õ¹²à±ß£º¶Ô VV[0..3]£¬´Ó poly µÄ EDGES ÖĞÕÒÓëÖ®ÏàÁ¬ÇÒÎ´±»Ê¹ÓÃµÄ±ß ====
+            // ==== æ‰©å±•ä¾§è¾¹ï¼šå¯¹ VV[0..3]ï¼Œä» poly çš„ EDGES ä¸­æ‰¾ä¸ä¹‹ç›¸è¿ä¸”æœªè¢«ä½¿ç”¨çš„è¾¹ ====
             for (int i = 0; i < 4; ++i) {
                 int vtx = (int)VV[i];
                 for (int t = 0; t < nEDGES; ++t) {
@@ -459,9 +460,9 @@ namespace cinolib {
                     }
                 }
             }
-            // ÏÖÔÚ£ºVV ÓĞ 8 ¸ö£¬EV ÓĞ 8 ¸ö£¨¼ÓÉÏ 4 Ìõ¡°Êú±ß¡±£©
+            // ç°åœ¨ï¼šVV æœ‰ 8 ä¸ªï¼ŒEV æœ‰ 8 ä¸ªï¼ˆåŠ ä¸Š 4 æ¡â€œç«–è¾¹â€ï¼‰
 
-            // ==== ÃæÅÅĞò ====
+            // ==== é¢æ’åº ====
             FV[nFV++] = (uint)f1;
             FV[nFV++] = (uint)f2;
 
@@ -470,7 +471,7 @@ namespace cinolib {
                 for (int fo = 0; fo < 6; ++fo) {
                     uint f = (uint)FACES[fo];
                     if (!contains_u(FV, nFV, f)) {
-                        // ¿´ f ÊÇ·ñº¬ eNeed
+                        // çœ‹ f æ˜¯å¦å« eNeed
                         bool hit = false;
                         for (int eOff = 0; eOff < 4; ++eOff) {
                             int fe = iabs(faceEdges[f * 4 + eOff]);
@@ -480,7 +481,7 @@ namespace cinolib {
                         }
                         if (hit) {
                             FV[nFV++] = f;
-                            // ²¢°Ñ¸ÃÃæÖĞ¡°ÉĞÎ´¼ÓÈë EV µÄµÚÒ»Ìõ±ß¡±¼ÓÈë EV
+                            // å¹¶æŠŠè¯¥é¢ä¸­â€œå°šæœªåŠ å…¥ EV çš„ç¬¬ä¸€æ¡è¾¹â€åŠ å…¥ EV
                             for (int eOff = 0; eOff < 4; ++eOff) {
                                 int fe = iabs(faceEdges[f * 4 + eOff]);
                                 if (!contains_u(EV, nEV, (uint)fe)) {
@@ -492,15 +493,15 @@ namespace cinolib {
                     }
                 }
             }
-            // ÏÖÔÚ£ºFV=6£¬EV=12£¬VV=8
+            // ç°åœ¨ï¼šFV=6ï¼ŒEV=12ï¼ŒVV=8
 
-            // ==== Æ«ÒÆµ½ĞÂµã¿Õ¼ä ====
+            // ==== åç§»åˆ°æ–°ç‚¹ç©ºé—´ ====
             uint PV = (uint)p + pvOffset;
             for (int i = 0; i < 6; ++i)  FV[i] += fvOffset;
             for (int i = 0; i < 12; ++i)  EV[i] += evOffset;
             for (int i = 0; i < 8; ++i)  VV[i] += vvOffset;
 
-            // ==== Ğ´³ö 8 ¸öÁùÃæÌå£¨ÑÏ¸ñ±£³ÖÄã CPU °æË³Ğò£©====
+            // ==== å†™å‡º 8 ä¸ªå…­é¢ä½“ï¼ˆä¸¥æ ¼ä¿æŒä½  CPU ç‰ˆé¡ºåºï¼‰====
             uint base = (uint)p * 64u;
             // 1
             out[base + 0] = VV[0]; out[base + 1] = EV[0]; out[base + 2] = FV[0]; out[base + 3] = EV[3];
@@ -530,22 +531,22 @@ namespace cinolib {
     };
 
 
-    // ============ Ö÷º¯ÊıÊµÏÖ ============
+    // ============ ä¸»å‡½æ•°å®ç° ============
 
     void Patch::singlePatch::subdiv_cuda(std::vector<vec3d>& pos, std::vector<uint>& polys)
     {
-        // ------------ Ò»Ğ©¹æÄ£²ÎÊı ------------
+        // ------------ ä¸€äº›è§„æ¨¡å‚æ•° ------------
         const uint ne = static_cast<uint>(edgeVerts.size());
         const uint nf = static_cast<uint>(faceEdges.size() / 4);
         const uint np = static_cast<uint>(polyFaces.size() / 6);
         const uint nv = static_cast<uint>(vertsPos.size());
 
-        // ------------- Ö÷»ú -> Éè±¸ ¿½±´/ÕûÀí -------------
-        // ¶¥µã
+        // ------------- ä¸»æœº -> è®¾å¤‡ æ‹·è´/æ•´ç† -------------
+        // é¡¶ç‚¹
         thrust::host_vector<dvec3> hV(nv);
         for (uint i = 0; i < nv; ++i) hV[i] = to_d(vertsPos[i]);
 
-        // ±ßµÄ¶Ëµã£¨×ªÎª uint2£©
+        // è¾¹çš„ç«¯ç‚¹ï¼ˆè½¬ä¸º uint2ï¼‰
         thrust::host_vector<uint2> hEV(ne);
         for (uint e = 0; e < ne; ++e) {
             auto u = edgeVerts[e].x();
@@ -553,7 +554,7 @@ namespace cinolib {
             hEV[e] = make_uint2(u, v);
         }
 
-        // ÆäËüË÷Òı/Æ«ÒÆ/±ê¼Ç
+        // å…¶å®ƒç´¢å¼•/åç§»/æ ‡è®°
         thrust::device_vector<dvec3> dV = hV;
 
         thrust::device_vector<uint2> dEV = hEV;
@@ -567,7 +568,7 @@ namespace cinolib {
         thrust::device_vector<uint> d_efOff(edgeFacesOffset.begin(), edgeFacesOffset.end());
         thrust::device_vector<uint> d_fpOff(facePolysOffset.begin(), facePolysOffset.end());
 
-        // ²¼¶û±ê¼ÇÑ¹³É uint8_t£¬±ãÓÚÉè±¸²àÊ¹ÓÃ
+        // å¸ƒå°”æ ‡è®°å‹æˆ uint8_tï¼Œä¾¿äºè®¾å¤‡ä¾§ä½¿ç”¨
         auto pack_bool = [](const std::vector<bool>& v) {
             thrust::host_vector<uint8_t> out(v.size());
             for (size_t i = 0; i < v.size(); ++i) out[i] = v[i] ? 1u : 0u;
@@ -577,45 +578,46 @@ namespace cinolib {
         thrust::device_vector<uint8_t> d_eOn = pack_bool(edgeOnSurf);
         thrust::device_vector<uint8_t> d_fOn = pack_bool(faceOnSurf);
 
-        // ------------- Éè±¸²àÊä³ö»º³å -------------
+        // ------------- è®¾å¤‡ä¾§è¾“å‡ºç¼“å†² -------------
         thrust::device_vector<dvec3> d_EC(ne); // edge centroids
         thrust::device_vector<dvec3> d_FC(nf); // face centroids
         thrust::device_vector<dvec3> d_PC(np); // poly centroids
 
-        // ĞÂµã£º
-        thrust::device_vector<dvec3> d_newPoly(patchPolys);  // Ìåµã£¨È¡Ç° patchPolys ¸öÌåĞÄ£©
-        thrust::device_vector<dvec3> d_newFace(patchFaces);  // Ãæµã
-        thrust::device_vector<dvec3> d_newEdge(patchEdges);  // ±ßµã
-        thrust::device_vector<dvec3> d_newVert(patchVerts);  // ¶¥µã
+        // æ–°ç‚¹ï¼š
+        thrust::device_vector<dvec3> d_newPoly(patchPolys);  // ä½“ç‚¹ï¼ˆå–å‰ patchPolys ä¸ªä½“å¿ƒï¼‰
+        thrust::device_vector<dvec3> d_newFace(patchFaces);  // é¢ç‚¹
+        thrust::device_vector<dvec3> d_newEdge(patchEdges);  // è¾¹ç‚¹
+        thrust::device_vector<dvec3> d_newVert(patchVerts);  // é¡¶ç‚¹
 
-        // ----------- GPU ²¢ĞĞ¼ÆËã -----------
+        // ----------- GPU å¹¶è¡Œè®¡ç®— -----------
         auto c_begin_e = thrust::make_counting_iterator<int>(0);
         auto c_begin_f = thrust::make_counting_iterator<int>(0);
         auto c_begin_p = thrust::make_counting_iterator<int>(0);
         auto c_begin_v = thrust::make_counting_iterator<int>(0);
 
-        // (1) ±ßĞÄ
+        auto cuda_start = std::chrono::high_resolution_clock::now();
+        // (1) è¾¹å¿ƒ
         thrust::for_each(c_begin_e, c_begin_e + int(ne),
             EdgeCentroidOp(thrust::raw_pointer_cast(dEV.data()),
                 thrust::raw_pointer_cast(dV.data()),
                 thrust::raw_pointer_cast(d_EC.data())));
 
-        // (2) ÃæĞÄ
+        // (2) é¢å¿ƒ
         thrust::for_each(c_begin_f, c_begin_f + int(nf),
             FaceCentroidOp(thrust::raw_pointer_cast(d_faceEdges.data()),
                 thrust::raw_pointer_cast(d_EC.data()),
                 thrust::raw_pointer_cast(d_FC.data())));
 
-        // (3) ÌåĞÄ
+        // (3) ä½“å¿ƒ
         thrust::for_each(c_begin_p, c_begin_p + int(np),
             PolyCentroidOp(thrust::raw_pointer_cast(d_polyFaces.data()),
                 thrust::raw_pointer_cast(d_FC.data()),
                 thrust::raw_pointer_cast(d_PC.data())));
 
-        // (4) ĞÂÌåµã£ºÖ±½ÓÈ¡Ç° patchPolys ¸öÌåĞÄ
+        // (4) æ–°ä½“ç‚¹ï¼šç›´æ¥å–å‰ patchPolys ä¸ªä½“å¿ƒ
         thrust::copy(d_PC.begin(), d_PC.begin() + patchPolys, d_newPoly.begin());
 
-        // (5) ĞÂÃæµã
+        // (5) æ–°é¢ç‚¹
         thrust::for_each(c_begin_f, c_begin_f + int(patchFaces),
             NewFaceVertOp(thrust::raw_pointer_cast(d_fOn.data()),
                 thrust::raw_pointer_cast(d_fpOff.data()),
@@ -624,7 +626,7 @@ namespace cinolib {
                 thrust::raw_pointer_cast(d_PC.data()),
                 thrust::raw_pointer_cast(d_newFace.data())));
 
-        // (6) ĞÂ±ßµã
+        // (6) æ–°è¾¹ç‚¹
         thrust::for_each(c_begin_e, c_begin_e + int(patchEdges),
             NewEdgeVertOp(thrust::raw_pointer_cast(d_eOn.data()),
                 thrust::raw_pointer_cast(d_fOn.data()),
@@ -637,7 +639,7 @@ namespace cinolib {
                 thrust::raw_pointer_cast(d_PC.data()),
                 thrust::raw_pointer_cast(d_newEdge.data())));
 
-        // (7) ĞÂ¶¥µã
+        // (7) æ–°é¡¶ç‚¹
         thrust::for_each(c_begin_v, c_begin_v + int(patchVerts),
             NewVertVertOp(thrust::raw_pointer_cast(d_vOn.data()),
                 thrust::raw_pointer_cast(d_eOn.data()),
@@ -654,36 +656,36 @@ namespace cinolib {
                 thrust::raw_pointer_cast(d_PC.data()),
                 thrust::raw_pointer_cast(d_newVert.data())));
 
-        // ----------- °ÑĞÂµã¿½»ØÖ÷»ú²¢Ğ´Èë pos -----------
+        // ----------- æŠŠæ–°ç‚¹æ‹·å›ä¸»æœºå¹¶å†™å…¥ pos -----------
         thrust::host_vector<dvec3> h_newPoly = d_newPoly;
         thrust::host_vector<dvec3> h_newFace = d_newFace;
         thrust::host_vector<dvec3> h_newEdge = d_newEdge;
         thrust::host_vector<dvec3> h_newVert = d_newVert;
 
-        // ¼ÆËãÆ«ÒÆ£¨²åÈëÇ°µÄ pos.size()£©
+        // è®¡ç®—åç§»ï¼ˆæ’å…¥å‰çš„ pos.size()ï¼‰
         uint pvOffset = static_cast<uint>(pos.size());
         uint fvOffset = pvOffset + static_cast<uint>(h_newPoly.size());
         uint evOffset = fvOffset + static_cast<uint>(h_newFace.size());
         uint vvOffset = evOffset + static_cast<uint>(h_newEdge.size());
 
-        // ×·¼ÓĞÂµã
+        // è¿½åŠ æ–°ç‚¹
         pos.reserve(pos.size() + h_newPoly.size() + h_newFace.size() + h_newEdge.size() + h_newVert.size());
         for (const auto& v : h_newPoly) pos.push_back(to_h(v));
         for (const auto& v : h_newFace) pos.push_back(to_h(v));
         for (const auto& v : h_newEdge) pos.push_back(to_h(v));
         for (const auto& v : h_newVert) pos.push_back(to_h(v));
 
-        // Éè±¸²àÊä³ö£¨Ã¿ poly 64 ¸ö uint£©
+        // è®¾å¤‡ä¾§è¾“å‡ºï¼ˆæ¯ poly 64 ä¸ª uintï¼‰
         thrust::device_vector<uint> d_topo(patchPolys * 64u);
 
-        // ĞèÒª°Ñ edgeVerts£¨std::vector<vec2u>£©×ª³É device ²à uint2
+        // éœ€è¦æŠŠ edgeVertsï¼ˆstd::vector<vec2u>ï¼‰è½¬æˆ device ä¾§ uint2
         thrust::host_vector<uint2> hEV2(edgeVerts.size());
         for (size_t e = 0; e < edgeVerts.size(); ++e) {
             hEV2[e] = make_uint2(edgeVerts[e].x(), edgeVerts[e].y());
         }
         thrust::device_vector<uint2> dEV2 = hEV2;
 
-        // ²¢ĞĞ×°Åä£¨Ã¿ poly Ò»¸öÏß³Ì£©
+        // å¹¶è¡Œè£…é…ï¼ˆæ¯ poly ä¸€ä¸ªçº¿ç¨‹ï¼‰
         auto c_begin_p2 = thrust::make_counting_iterator<int>(0);
         thrust::for_each(c_begin_p2, c_begin_p2 + int(patchPolys),
             TopoAssembleOp(
@@ -695,10 +697,13 @@ namespace cinolib {
             )
         );
 
-        // »Ø¿½²¢×·¼Óµ½ polys£¨Ë³ĞòÎÈ¶¨£ºp=0..patchPolys-1£©
+        // å›æ‹·å¹¶è¿½åŠ åˆ° polysï¼ˆé¡ºåºç¨³å®šï¼šp=0..patchPolys-1ï¼‰
         thrust::host_vector<uint> h_topo = d_topo;
         polys.reserve(polys.size() + h_topo.size());
         polys.insert(polys.end(), h_topo.begin(), h_topo.end());
+        auto cuda_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = cuda_end - cuda_start;
+        std::cout << "cuda Time cost: " << elapsed.count() << " ms\n" << std::endl;
     }
     
     static inline dvec3 to_d(const vec3d& v) {
@@ -707,4 +712,31 @@ namespace cinolib {
     static inline vec3d to_h(const dvec3& v) {
         return vec3d(v.x, v.y, v.z);
     }
+}
+
+__global__ void warmupKernel() {}
+
+bool cuda::init(int device_id) {
+    cudaError_t err = cudaSetDevice(device_id);
+    if (err != cudaSuccess) {
+        ::std::cerr << "cudaSetDevice failed: " << cudaGetErrorString(err) << "\n";
+        return false;
+    }
+
+    // å¼ºåˆ¶åˆ›å»ºä¸Šä¸‹æ–‡
+    err = cudaFree(0);
+    if (err != cudaSuccess) {
+        ::std::cerr << "cudaFree(0) failed: " << cudaGetErrorString(err) << "\n";
+        return false;
+    }
+
+    // é¢„çƒ­ kernelï¼ˆå¯é€‰ï¼‰
+    warmupKernel << <1, 1 >> > ();
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        ::std::cerr << "cudaDeviceSynchronize failed: " << cudaGetErrorString(err) << "\n";
+        return false;
+    }
+
+    return true;
 }
