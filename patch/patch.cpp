@@ -18,10 +18,10 @@
 #include <chrono>
 
 #define USE_CUDA
-#define TEST
+//#define TEST
 #define DRAW
 //#define DEBUG
-//#define OUTPUT
+#define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
@@ -29,6 +29,10 @@
 std::string root(DATA_PATH);
 
 namespace cinolib {
+#ifdef USE_CUDA
+	float cuda_elapsed = 0.0;
+#endif
+
 	Patch::Patch() {}
 
 	Patch::Patch(std::string fileName) {
@@ -557,11 +561,16 @@ namespace cinolib {
 		std::vector<uint> polys;
 		for (int i = 1; i <= subdiv_times; i++) {
 			uint num_clusters = std::min(int(mesh.num_polys() / POLYS_PER_CLUSTER + 1), 16);
+
+			auto patching_start = std::chrono::high_resolution_clock::now();
 			patching(num_clusters);
+			auto patching_end = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double, std::milli> elapsed = patching_end - patching_start;
+			std::cout << "patching complete. Time cost: " << elapsed.count() << " ms\n" << std::endl;
+
 			int temp = 0;
 			std::cout << std::endl << "subdivision start." << std::endl;
 
-			auto subdiv_start = std::chrono::high_resolution_clock::now();
 			for (singlePatch patch : patches) {
 				std::cout << "subdiving patch: " << temp++ << std::endl;
 #ifdef USE_CUDA
@@ -570,9 +579,7 @@ namespace cinolib {
 				patch.subdiv(pos, polys);
 #endif
 			}
-			auto subdiv_end = std::chrono::high_resolution_clock::now();
-			std::chrono::duration<double, std::milli> elapsed = subdiv_end - subdiv_start;
-			std::cout << "subdivision complete. Time cost: " << elapsed.count() << " ms\n" << std::endl;
+			std::cout << "subdivision complete. Time cost: " << cuda_elapsed << " ms\n" << std::endl;
 			deduplicate_points_and_remap_hex(pos, polys);
 			mesh = Hexmesh<>(pos, polys);
 			if (i == subdiv_times) {
@@ -1117,9 +1124,9 @@ int main() {
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
 	patch.subdiv(3);
 #else
-	cinolib::Patch patch(root + "/input/rockerarm.mesh");
+	cinolib::Patch patch(root + "/input/bunny_hex.mesh");
 	std::cout << "已读取" << patch.getMesh().vector_polys().size() << "单元体网格" << std::endl;
-	patch.subdiv(2);
+	patch.subdiv(1);
 #endif
 }
 

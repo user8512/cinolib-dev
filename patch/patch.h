@@ -3,6 +3,8 @@
 #include <cinolib/meshes/meshes.h>
 namespace cinolib
 {
+	extern float cuda_elapsed;
+
 	class Patch
 	{
 	public:

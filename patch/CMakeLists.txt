@@ -10,7 +10,8 @@ set(CMAKE_CUDA_ARCHITECTURES 86)
 add_executable(${PROJECT_NAME}
     patch.cpp
     kmeans.cpp
-    cc_subdiv_gpu.cu       
+    cc_subdiv_gpu.cu   
+    #cc_subdiv_gpu_prototype.cu       
 )
 
 # 对多翻译单元/模板友好
