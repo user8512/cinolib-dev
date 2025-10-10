@@ -7,11 +7,6 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/functional.h>
 #include <cuda_runtime.h>
-#include <vector>
-#include <algorithm>
-#include <cstdint>
-#include <chrono>
-#include <iostream>
 
 #ifndef CUDA_CHECK
 #define CUDA_CHECK(call) do { \
@@ -640,6 +635,10 @@ namespace cinolib {
             CUDA_CHECK(cudaDeviceSynchronize());
         }
 
+        auto cuda_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = cuda_end - cuda_start;
+        cuda_elapsed += elapsed.count();
+
         // ---- 回拷到主机 ----
         thrust::host_vector<dvec3> h_newPoly = d_newPoly;
         thrust::host_vector<dvec3> h_newFace = d_newFace;
@@ -666,6 +665,9 @@ namespace cinolib {
         thrust::device_vector<uint2> dEV2 = hEV2;
 
         auto c_begin_p2 = thrust::make_counting_iterator<int>(0);
+
+        cuda_start = std::chrono::high_resolution_clock::now();
+
         thrust::for_each(c_begin_p2, c_begin_p2 + int(patchPolys),
             TopoAssembleOp(
                 thrust::raw_pointer_cast(d_polyFaces.data()),
@@ -676,13 +678,14 @@ namespace cinolib {
             )
         );
 
+        cuda_end = std::chrono::high_resolution_clock::now();
+        elapsed = cuda_end - cuda_start;
+        cuda_elapsed += elapsed.count();
+        std::cout << "cluster time cost: " << cuda_elapsed << " ms" << std::endl;
+
         thrust::host_vector<uint> h_topo = d_topo;
         polys.reserve(polys.size() + h_topo.size());
         polys.insert(polys.end(), h_topo.begin(), h_topo.end());
-
-        auto cuda_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> elapsed = cuda_end - cuda_start;
-        cuda_elapsed += elapsed.count();
     }
 
     // ---- host/device vec 转换 ----
@@ -693,30 +696,3 @@ namespace cinolib {
         return vec3d(v.x, v.y, v.z);
     }
 } // namespace cinolib
-
-__global__ void warmupKernel() {}
-
-bool cuda::init(int device_id) {
-    cudaError_t err = cudaSetDevice(device_id);
-    if (err != cudaSuccess) {
-        ::std::cerr << "cudaSetDevice failed: " << cudaGetErrorString(err) << "\n";
-        return false;
-    }
-
-    // 强制创建上下文
-    err = cudaFree(0);
-    if (err != cudaSuccess) {
-        ::std::cerr << "cudaFree(0) failed: " << cudaGetErrorString(err) << "\n";
-        return false;
-    }
-
-    // 预热 kernel（可选）
-    warmupKernel << <1, 1 >> > ();
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        ::std::cerr << "cudaDeviceSynchronize failed: " << cudaGetErrorString(err) << "\n";
-        return false;
-    }
-
-    return true;
-}

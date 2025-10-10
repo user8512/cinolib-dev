@@ -1,21 +1,6 @@
 #include "patch.h"
 #include "kmeans.h"
-#include <stack>
-#include <algorithm>
-#include <random>
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <cstdint>
-#include <iterator>
 #include <cinolib/gl/glcanvas.h>
-#include <unordered_map>
-#include <tuple>
-#include <cmath>
-#include <cstdint>
-#include <limits>
-#include <functional>
-#include <chrono>
 
 
 namespace cinolib {
@@ -267,6 +252,7 @@ namespace cinolib {
 			verts.clear();
 			edges.clear();
 			faces.clear();
+			polys.clear();
 			edgeVerts.clear();
 			faceEdges.clear();
 			polyFaces.clear();
@@ -615,7 +601,7 @@ namespace cinolib {
 			outfile3 << '\n';
 #endif
 
-			patches.emplace_back(std::move(polys), patchPolys, patchFaces, patchEdges, patchVerts, std::move(v_pos), std::move(edgeVerts), std::move(faceEdges), std::move(polyFaces),
+			patches.emplace_back(patchPolys, patchFaces, patchEdges, patchVerts, std::move(v_pos), std::move(edgeVerts), std::move(faceEdges), std::move(polyFaces),
 				std::move(vertEdges), std::move(edgeFaces), std::move(facePolys), std::move(vertEdgesOffset), std::move(edgeFacesOffset), std::move(facePolysOffset),
 				std::move(vertOnSurf), std::move(edgeOnSurf), std::move(faceOnSurf));
 		}
@@ -625,7 +611,9 @@ namespace cinolib {
 		std::vector<vec3d> pos;
 		std::vector<uint> polys;
 		for (int i = 1; i <= subdiv_times; i++) {
-			uint num_clusters = std::min(int(mesh.num_polys() / POLYS_PER_CLUSTER + 1), 16);
+			cuda_elapsed = 0.0;
+			cpu_elapsed = 0.0;
+			uint num_clusters = std::min(int(mesh.num_polys() / MAX_POLYS_PER_CLUSTER + 1), MAX_CLUSTER);
 
 			auto patching_start = std::chrono::high_resolution_clock::now();
 			patching(num_clusters);

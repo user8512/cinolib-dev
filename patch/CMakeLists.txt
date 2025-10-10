@@ -13,7 +13,7 @@ add_executable(${PROJECT_NAME}
     kmeans.cpp
     cc_subdiv_gpu.cu   
     #cc_subdiv_gpu_prototype.cu       
- "main.cpp")
+ )
 
 # 对多翻译单元/模板友好
 set_target_properties(${PROJECT_NAME} PROPERTIES
