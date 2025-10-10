@@ -271,22 +271,22 @@ namespace cinolib {
             for (int i = 0; i < 8; ++i)  VV[i] += vvOffset;
 
             uint base = (uint)p * 64u;
-            out[base + 0] = VV[0]; out[base + 1] = EV[0]; out[base + 2] = FV[0]; out[base + 3] = EV[3];
-            out[base + 4] = EV[4]; out[base + 5] = FV[2]; out[base + 6] = PV;    out[base + 7] = FV[5];
-            out[base + 8] = EV[0]; out[base + 9] = VV[1]; out[base + 10] = EV[1]; out[base + 11] = FV[0];
-            out[base + 12] = FV[2]; out[base + 13] = EV[5]; out[base + 14] = FV[3]; out[base + 15] = PV;
-            out[base + 16] = FV[0]; out[base + 17] = EV[1]; out[base + 18] = VV[2]; out[base + 19] = EV[2];
-            out[base + 20] = PV;    out[base + 21] = FV[3]; out[base + 22] = EV[6]; out[base + 23] = FV[4];
-            out[base + 24] = EV[3]; out[base + 25] = FV[0]; out[base + 26] = EV[2]; out[base + 27] = VV[3];
-            out[base + 28] = FV[5]; out[base + 29] = PV;    out[base + 30] = FV[4]; out[base + 31] = EV[7];
-            out[base + 32] = EV[4]; out[base + 33] = FV[2]; out[base + 34] = PV;    out[base + 35] = FV[5];
-            out[base + 36] = VV[4]; out[base + 37] = EV[8]; out[base + 38] = FV[1]; out[base + 39] = EV[11];
-            out[base + 40] = FV[2]; out[base + 41] = EV[5]; out[base + 42] = FV[3]; out[base + 43] = PV;
-            out[base + 44] = EV[8]; out[base + 45] = VV[5]; out[base + 46] = EV[9]; out[base + 47] = FV[1];
-            out[base + 48] = PV;    out[base + 49] = FV[3]; out[base + 50] = EV[6]; out[base + 51] = FV[4];
-            out[base + 52] = FV[1]; out[base + 53] = EV[9]; out[base + 54] = VV[6]; out[base + 55] = EV[10];
-            out[base + 56] = FV[5]; out[base + 57] = PV;    out[base + 58] = FV[4]; out[base + 59] = EV[7];
-            out[base + 60] = EV[11]; out[base + 61] = FV[1]; out[base + 62] = EV[10]; out[base + 63] = VV[7];
+            out[base + 0] = VV[0]; out[base + 1] = EV[3]; out[base + 2] = FV[0]; out[base + 3] = EV[0];
+            out[base + 4] = EV[4]; out[base + 5] = FV[5]; out[base + 6] = PV;    out[base + 7] = FV[2];
+            out[base + 8] = EV[0]; out[base + 9] = FV[0]; out[base + 10] = EV[1]; out[base + 11] = VV[1];
+            out[base + 12] = FV[2]; out[base + 13] = PV; out[base + 14] = FV[3]; out[base + 15] = EV[5];
+            out[base + 16] = FV[0]; out[base + 17] = EV[2]; out[base + 18] = VV[2]; out[base + 19] = EV[1];
+            out[base + 20] = PV;    out[base + 21] = FV[4]; out[base + 22] = EV[6]; out[base + 23] = FV[3];
+            out[base + 24] = EV[3]; out[base + 25] = VV[3]; out[base + 26] = EV[2]; out[base + 27] = FV[0];
+            out[base + 28] = FV[5]; out[base + 29] = EV[7];    out[base + 30] = FV[4]; out[base + 31] = PV;
+            out[base + 32] = EV[4]; out[base + 33] = FV[5]; out[base + 34] = PV;    out[base + 35] = FV[2];
+            out[base + 36] = VV[4]; out[base + 37] = EV[11]; out[base + 38] = FV[1]; out[base + 39] = EV[8];
+            out[base + 40] = FV[2]; out[base + 41] = PV; out[base + 42] = FV[3]; out[base + 43] = EV[5];
+            out[base + 44] = EV[8]; out[base + 45] = FV[1]; out[base + 46] = EV[9]; out[base + 47] = VV[5];
+            out[base + 48] = PV;    out[base + 49] = FV[4]; out[base + 50] = EV[6]; out[base + 51] = FV[3];
+            out[base + 52] = FV[1]; out[base + 53] = EV[10]; out[base + 54] = VV[6]; out[base + 55] = EV[9];
+            out[base + 56] = FV[5]; out[base + 57] = EV[7];    out[base + 58] = FV[4]; out[base + 59] = PV;
+            out[base + 60] = EV[11]; out[base + 61] = VV[7]; out[base + 62] = EV[10]; out[base + 63] = FV[1];
         }
     };
 

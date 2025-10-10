@@ -4,6 +4,9 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <array>
 #include <stack>
 #include <cstdint>
 #include <random>
@@ -12,8 +15,10 @@
 #include <cmath>
 #include <limits>
 #include <functional>
+#include <cassert>
+#include <cstddef>
 
-#define USE_CUDA
+//#define USE_CUDA
 #define TEST
 #define DRAW
 //#define DEBUG
@@ -21,7 +26,7 @@
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
-#define MAX_POLYS_PER_CLUSTER 512
+#define MAX_POLYS_PER_CLUSTER 24
 #define MAX_CLUSTER 8
 #define root std::string(DATA_PATH)
 
@@ -42,7 +47,7 @@ namespace cinolib {
 		void patching(int num_clusters);
 		void subdiv(int subdiv_times);
 		// 用于各patch完成操作后，合并容差范围内的点
-		void deduplicate_points_and_remap_hex(std::vector<vec3d>& points, std::vector<uint>& hex_idx, double tol = 1e-6);
+		void deduplicate_verts(std::vector<vec3d>& verts, std::vector<uint>& polys, double tol = 1e-2);
 
 		Hexmesh<> *getMesh() { return &mesh; }
 		bool getFaceEdgeSign(uint eid, uint fid);
@@ -89,4 +94,5 @@ namespace cinolib {
 	};
 
 	inline void PrintVec3d(vec3d& v);
+	inline bool Vec3dEqual(vec3d& v1, vec3d& v2, double tolerance = 1e-6);
 }

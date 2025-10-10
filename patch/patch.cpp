@@ -35,157 +35,96 @@ namespace cinolib {
 		return mesh.poly_face_is_CCW(pid, fid);
 	}
 
-	void Patch::deduplicate_points_and_remap_hex(
-    std::vector<vec3d>& points,
-    std::vector<uint32_t>& hex_idx,
-    double tol)
-{
-    assert(tol > 0.0 && !points.empty());
-    const double cell = tol;            // 网格尺寸
-    const double tol2 = tol * tol;
+	// 8 元组哈希（用于 unordered_set）
+	struct Array8Hash {
+		std::size_t operator()(const std::array<unsigned int, 8>& a) const noexcept {
+			std::size_t h = 1469598103934665603ull; // FNV-like
+			for (int i = 0; i < 8; ++i) {
+				std::size_t x = static_cast<std::size_t>(a[i]);
+				h ^= x + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+			}
+			return h;
+		}
+	};
 
-    auto dist2 = [&](uint32_t i, uint32_t j) {
-        const auto &a = points[i], &b = points[j];
-        const double dx = a.x() - b.x();
-        const double dy = a.y() - b.y();
-        const double dz = a.z() - b.z();
-        return dx*dx + dy*dy + dz*dz;
-    };
+	void Patch::deduplicate_verts(std::vector<vec3d>& verts, std::vector<uint>& polys, double tolerance) {
+		// ===== 第一步：顶点去重 + 重映射 polys =====
+		const size_t n = verts.size();
+		if (n == 0) {
+			assert(polys.size() % 8 == 0);
+			return;
+		}
 
-    using Key = std::array<long long,3>;
-    struct KeyHash {
-        size_t operator()(const Key& k) const noexcept {
-            // 简易哈希
-            uint64_t h = 1469598103934665603ull;
-            auto mix = [&](long long v){
-                uint64_t x = static_cast<uint64_t>(v) * 1099511628211ull;
-                h ^= x + 0x9e3779b97f4a7c15ull + (h<<6) + (h>>2);
-            };
-            mix(k[0]); mix(k[1]); mix(k[2]);
-            return static_cast<size_t>(h);
-        }
-    };
+		std::vector<size_t> rep(n, static_cast<size_t>(-1));
+		std::vector<bool> removed(n, false);
 
-    auto quantize = [&](const vec3d& p)->Key {
-        // floor 量化，比 round 更可控；容差覆盖靠查 27 邻居保证
-        return Key{
-            static_cast<long long>(std::floor(p.x()/cell)),
-            static_cast<long long>(std::floor(p.y()/cell)),
-            static_cast<long long>(std::floor(p.z()/cell))
-        };
-    };
+		for (size_t i = 0; i < n; ++i) {
+			if (rep[i] != static_cast<size_t>(-1)) continue;
+			rep[i] = i;
+			// 支持“一组可能多于 2 个相等顶点”：不 break，找全
+			for (size_t j = i + 1; j < n; ++j) {
+				if (rep[j] != static_cast<size_t>(-1)) continue;
+				if (Vec3dEqual(verts[i], verts[j])) {
+					rep[j] = i;
+					removed[j] = true;
+				}
+			}
+		}
 
-    // 1) 建桶：格子 -> 原始点索引列表
-    std::unordered_map<Key, std::vector<uint32_t>, KeyHash> grid;
-    grid.reserve(points.size());
-    for (uint32_t i = 0; i < points.size(); ++i) {
-        grid[quantize(points[i])].push_back(i);
-    }
+		std::vector<unsigned int> remap(n, 0);
+		std::vector<vec3d> newVerts;
+		newVerts.reserve(n);
 
-    // 2) 并查集
-    struct DSU {
-        std::vector<uint32_t> p, r;
-        explicit DSU(size_t n): p(n), r(n,0){ std::iota(p.begin(), p.end(), 0u); }
-        uint32_t find(uint32_t x){ return p[x]==x? x: p[x]=find(p[x]); }
-        void unite(uint32_t a, uint32_t b){
-            a = find(a); b = find(b);
-            if (a==b) return;
-            if (r[a] < r[b]) std::swap(a,b);
-            p[b] = a;
-            if (r[a]==r[b]) ++r[a];
-        }
-    } dsu(points.size());
+		unsigned int nextNew = 0;
+		for (size_t i = 0; i < n; ++i) {
+			if (!removed[i]) {
+				remap[i] = nextNew++;
+				newVerts.push_back(verts[i]);
+			}
+		}
+		for (size_t i = 0; i < n; ++i) {
+			if (removed[i]) {
+				const size_t r = rep[i];
+				assert(r != static_cast<size_t>(-1));
+				remap[i] = remap[r];
+			}
+		}
 
-    // 只与“本格及其上三角邻格”做比较，避免重复
-    const int off[14][3] = {
-        {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1},
-        {1,1,0}, {1,0,1}, {0,1,1}, {1,1,1},
-        {-1,1,0}, {-1,0,1}, {0,-1,1},
-        {1,-1,0}, {0,1,-1}, {1,0,-1}
-    };
+		for (auto& idx : polys) {
+			assert(static_cast<size_t>(idx) < n);
+			idx = remap[idx];
+		}
+		verts.swap(newVerts);
 
-    for (const auto& kv : grid) {
-        const Key& base = kv.first;
-        const auto& A = kv.second;
+		// ===== 第二步：hexa 去重（顺序无关：以“排序后的 8 元组”作为 key） =====
+		assert(polys.size() % 8 == 0 && "polys 长度必须是 8 的倍数");
+		const size_t m = polys.size();
 
-        // 同格：上三角配对
-        for (size_t i = 0; i < A.size(); ++i)
-            for (size_t j = i+1; j < A.size(); ++j)
-                if (dist2(A[i], A[j]) <= tol2) dsu.unite(A[i], A[j]);
+		std::unordered_set<std::array<unsigned int, 8>, Array8Hash> seen;
+		seen.reserve(m / 8 * 2);
 
-        // 邻格：只取“半空间”方向，避免双计
-        for (const auto& d : off) {
-            if (d[0]==0 && d[1]==0 && d[2]==0) continue;
-            Key nb{ base[0]+d[0], base[1]+d[1], base[2]+d[2] };
-            auto it = grid.find(nb);
-            if (it == grid.end()) continue;
-            const auto& B = it->second;
-            for (uint32_t i : A)
-                for (uint32_t j : B)
-                    if (dist2(i, j) <= tol2) dsu.unite(i, j);
-        }
-    }
+		std::vector<unsigned int> newPolys;
+		newPolys.reserve(m);
 
-    // 3) 建 old->new 映射，并生成唯一点（这里取分量中的“第一个出现者”作为代表；
-    //    若想几何更平滑，可改成分量质心）
-    std::vector<int> root2new(points.size(), -1);
-    std::vector<uint32_t> old2new(points.size(), 0);
-    std::vector<vec3d> uniques; uniques.reserve(points.size());
+		for (size_t k = 0; k < m; k += 8) {
+			// 原始顺序（为了保留第一次出现的写回时仍用原顺序）
+			std::array<unsigned int, 8> orig{
+				polys[k + 0], polys[k + 1], polys[k + 2], polys[k + 3],
+				polys[k + 4], polys[k + 5], polys[k + 6], polys[k + 7]
+			};
 
-    for (uint32_t i = 0; i < points.size(); ++i) {
-        uint32_t r = dsu.find(i);
-        int &id = root2new[r];
-        if (id < 0) {
-            id = static_cast<int>(uniques.size());
-            uniques.push_back(points[r]); // 或改成累计质心
-        }
-        old2new[i] = static_cast<uint32_t>(id);
-    }
+			// 规范化 key：排序后的 8 元组（顺序无关）
+			std::array<unsigned int, 8> key = orig;
+			std::sort(key.begin(), key.end());
 
-    // 4) 重映射并过滤退化六面体（8 节点）
-    if (hex_idx.size() % 8 != 0) {
-        // 这里也可直接 assert/throw
-        // 为稳健起见，只处理完整的 8 的倍数部分
-    }
+			// 若该“集合”首次出现，则保留；否则丢弃
+			if (seen.insert(key).second) {
+				newPolys.insert(newPolys.end(), orig.begin(), orig.end());
+			}
+		}
 
-    std::vector<uint32_t> new_hex;
-    new_hex.reserve(hex_idx.size());
-
-    auto is_degenerate_hex = [&](const uint32_t *v)->bool{
-        // 判断 8 个索引是否有重复
-        uint32_t s[8];
-        for (int i=0;i<8;++i) s[i]=v[i];
-        std::sort(s, s+8);
-        return std::unique(s, s+8) != (s+8);
-    };
-
-    for (size_t i = 0; i + 7 < hex_idx.size(); i += 8) {
-        uint32_t v[8];
-        bool ok = true;
-        for (int k=0;k<8;++k) {
-            uint32_t oi = hex_idx[i+k];
-            if (oi >= old2new.size()) { ok = false; break; } // 非法索引保护
-            v[k] = old2new[oi];
-        }
-        if (!ok) continue;
-        if (is_degenerate_hex(v)) continue; // 跳过退化单元
-        for (int k=0;k<8;++k) new_hex.push_back(v[k]);
-    }
-
-    // 5) （可选）按 new_hex 实际使用的点再做一次“压缩”
-    std::vector<char> used(uniques.size(), 0);
-    for (uint32_t id : new_hex) used[id] = 1;
-    std::vector<uint32_t> comp(uniques.size(), 0);
-    std::vector<vec3d> compact_pts; compact_pts.reserve(uniques.size());
-    for (uint32_t i=0;i<uniques.size();++i) if (used[i]) {
-        comp[i] = static_cast<uint32_t>(compact_pts.size());
-        compact_pts.push_back(uniques[i]);
-    }
-    for (uint32_t &id : new_hex) id = comp[id];
-
-    points.swap(compact_pts);
-    hex_idx.swap(new_hex);
-}
+		polys.swap(newPolys);
+	}
 
 
 	void Patch::patching(int num_clusters) {
@@ -306,7 +245,6 @@ namespace cinolib {
 			std::cout << "polys num: " << patchPolys << std::endl;
 			std::cout << "ribbon size: " << polys.size() - patchPolys << std::endl;
 #endif
-
 			// 3. first scan to record items num of patch
 			for (auto& pid : patch) {
 				for (auto& fid : mesh.adj_p2f(pid)) {
@@ -628,6 +566,9 @@ namespace cinolib {
 				std::cout << "subdiving patch: " << temp++ << std::endl;
 #ifdef USE_CUDA
 				patch.subdiv_cuda(pos, polys);
+				Hexmesh<> tempMesh(pos, polys);
+				std::string tempPath = root + "/output/subdiv_result" + std::to_string(temp) + ".mesh";
+				tempMesh.save(tempPath.c_str());
 #else
 				patch.subdiv(pos, polys);
 #endif
@@ -637,7 +578,7 @@ namespace cinolib {
 #else
 			std::cout << "subdivision complete. Time cost: " << cpu_elapsed << " ms\n" << std::endl;
 #endif
-			deduplicate_points_and_remap_hex(pos, polys);
+			deduplicate_verts(pos, polys);
 			if (i == subdiv_times) {
 #ifdef DRAW
 				DrawableHexmesh<> newMesh(pos, polys);
@@ -650,6 +591,8 @@ namespace cinolib {
 				mesh = Hexmesh<>(pos, polys);
 				pos.clear();
 				polys.clear();
+				std::string tempPath = root + "/output/result.mesh";
+				mesh.save(tempPath.c_str());
 			}
 		}
 #ifdef OUTPUT
@@ -757,6 +700,8 @@ namespace cinolib {
 				if (p1 < 0) {
 					p1 = -p1 - 1;
 				}
+				if (p0 == p1) std::cout << "11111" << std::endl;
+
 				vec3d newFaceVert(0, 0, 0);
 				newFaceVert += polyCentroids[p0];
 				newFaceVert += polyCentroids[p1];
@@ -855,6 +800,7 @@ namespace cinolib {
 					}
 					tempEdges.push_back(edge);
 					int edgeN = edgeFacesOffset[edge + 1] - edgeFacesOffset[edge];
+
 					for (int j = 0; j < edgeN; j++) {
 						int face = edgeFaces[edgeFacesOffset[edge] + j];
 						if (face < 0) {
@@ -863,6 +809,7 @@ namespace cinolib {
 						if (find(tempFaces.begin(), tempFaces.end(), face) == tempFaces.end()) {
 							tempFaces.push_back(face);
 							int faceN = facePolysOffset[face + 1] - facePolysOffset[face];
+
 							for (int k = 0; k < faceN; k++) {
 								int poly = facePolys[facePolysOffset[face] + k];
 								if (poly < 0) {
@@ -939,6 +886,7 @@ namespace cinolib {
 				newVertVerts.push_back(newVertVert);
 			}
 		}
+
 		auto cpu_end = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double, std::milli> elapsed = cpu_end - cpu_start;
 		cpu_elapsed += elapsed.count();
@@ -1176,14 +1124,14 @@ namespace cinolib {
 			}
 
 			// 直接针对局部拓扑构建新的体（六面体一分八）
-			polys.insert(polys.end(), { VV[0], EV[0], FV[0], EV[3], EV[4], FV[2], PV, FV[5] });
-			polys.insert(polys.end(), { EV[0], VV[1], EV[1], FV[0], FV[2], EV[5], FV[3], PV });
-			polys.insert(polys.end(), { FV[0], EV[1], VV[2], EV[2], PV, FV[3], EV[6], FV[4] });
-			polys.insert(polys.end(), { EV[3], FV[0], EV[2], VV[3], FV[5], PV, FV[4], EV[7] });
-			polys.insert(polys.end(), { EV[4], FV[2], PV, FV[5], VV[4], EV[8], FV[1], EV[11] });
-			polys.insert(polys.end(), { FV[2], EV[5], FV[3], PV, EV[8], VV[5], EV[9], FV[1] });
-			polys.insert(polys.end(), { PV, FV[3], EV[6], FV[4], FV[1], EV[9], VV[6], EV[10] });
-			polys.insert(polys.end(), { FV[5], PV, FV[4], EV[7], EV[11], FV[1], EV[10], VV[7] });
+			polys.insert(polys.end(), { VV[0], EV[3], FV[0], EV[0], EV[4], FV[5], PV, FV[2] });
+			polys.insert(polys.end(), { EV[0], FV[0], EV[1], VV[1], FV[2], PV, FV[3], EV[5] });
+			polys.insert(polys.end(), { FV[0], EV[2], VV[2], EV[1], PV, FV[4], EV[6], FV[3]});
+			polys.insert(polys.end(), { EV[3], VV[3], EV[2], FV[0], FV[5], EV[7], FV[4], PV });
+			polys.insert(polys.end(), { EV[4], FV[5], PV, FV[2], VV[4], EV[11], FV[1], EV[8] });
+			polys.insert(polys.end(), { FV[2], PV, FV[3], EV[5], EV[8], FV[1], EV[9], VV[5] });
+			polys.insert(polys.end(), { PV,  FV[4], EV[6],FV[3], FV[1], EV[10], VV[6], EV[9] });
+			polys.insert(polys.end(), { FV[5], EV[7], FV[4], PV, EV[11],VV[7], EV[10],  FV[1] });
 		}
 		cpu_end = std::chrono::high_resolution_clock::now();
 		elapsed = cpu_end - cpu_start;
@@ -1192,6 +1140,10 @@ namespace cinolib {
 
 	inline void PrintVec3d(vec3d& v) {
 		std::cout << std::endl << "(" << v.x() << ", " << v.y() << ", " << v.z() << ")" << std::endl;
+	}
+
+	inline bool Vec3dEqual(vec3d& v1, vec3d& v2, double tolerance) {
+		return std::fabs(v1.x() - v2.x()) <= tolerance && std::fabs(v1.y() - v2.y()) <= tolerance && std::fabs(v1.z() - v2.z()) <= tolerance;
 	}
 };
 
