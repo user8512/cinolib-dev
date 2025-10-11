@@ -18,9 +18,9 @@
 #include <cassert>
 #include <cstddef>
 
-//#define USE_CUDA
-#define TEST
-#define DRAW
+#define USE_CUDA
+//#define TEST
+//#define DRAW
 //#define DEBUG
 #define OUTPUT
 //#define DETAIL

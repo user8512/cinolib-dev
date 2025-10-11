@@ -548,6 +548,7 @@ namespace cinolib {
         auto c_begin_p = thrust::make_counting_iterator<int>(0);
         auto c_begin_v = thrust::make_counting_iterator<int>(0);
 
+        
         auto cuda_start = std::chrono::high_resolution_clock::now();
 
         // (1) 边心
@@ -681,7 +682,7 @@ namespace cinolib {
         cuda_end = std::chrono::high_resolution_clock::now();
         elapsed = cuda_end - cuda_start;
         cuda_elapsed += elapsed.count();
-        std::cout << "cluster time cost: " << cuda_elapsed << " ms" << std::endl;
+        std::cout << "cluster time cost: " << elapsed.count() << " ms" << std::endl;
 
         thrust::host_vector<uint> h_topo = d_topo;
         polys.reserve(polys.size() + h_topo.size());
