@@ -19,15 +19,15 @@
 #include <cstddef>
 
 #define USE_CUDA
-//#define TEST
+#define TEST
 //#define DRAW
 //#define DEBUG
 #define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
-#define MAX_POLYS_PER_CLUSTER 24
-#define MAX_CLUSTER 8
+#define MAX_POLYS_PER_CLUSTER 256
+#define MAX_CLUSTER 16
 #define root std::string(DATA_PATH)
 
 namespace cinolib {
@@ -47,7 +47,7 @@ namespace cinolib {
 		void patching(int num_clusters);
 		void subdiv(int subdiv_times);
 		// 用于各patch完成操作后，合并容差范围内的点
-		void deduplicate_verts(std::vector<vec3d>& verts, std::vector<uint>& polys, double tol = 1e-2);
+		void deduplicate_verts(std::vector<vec3d>& verts, std::vector<uint>& polys, double tol = 1e-6);
 
 		Hexmesh<> *getMesh() { return &mesh; }
 		bool getFaceEdgeSign(uint eid, uint fid);

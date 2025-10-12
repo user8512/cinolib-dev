@@ -682,7 +682,7 @@ namespace cinolib {
         cuda_end = std::chrono::high_resolution_clock::now();
         elapsed = cuda_end - cuda_start;
         cuda_elapsed += elapsed.count();
-        std::cout << "cluster time cost: " << elapsed.count() << " ms" << std::endl;
+        std::cout << "execution time of current patch: " << elapsed.count() << " ms" << std::endl;
 
         thrust::host_vector<uint> h_topo = d_topo;
         polys.reserve(polys.size() + h_topo.size());

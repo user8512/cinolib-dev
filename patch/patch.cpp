@@ -592,12 +592,15 @@ namespace cinolib {
 				tempMesh.save(tempPath.c_str());*/
 			}
 #ifdef USE_CUDA
-			std::cout << "subdivision complete. Time cost: " << cuda_elapsed << " ms\n" << std::endl;
+			std::cout << "subdivision complete. Execution time: " << cuda_elapsed << " ms" << std::endl;
 #else
-			std::cout << "subdivision complete. Time cost: " << cpu_elapsed << " ms\n" << std::endl;
+			std::cout << "subdivision complete. Execution time: " << cpu_elapsed << " ms\n" << std::endl;
 #endif
+			auto deduplicate_start = std::chrono::high_resolution_clock::now();
 			deduplicate_verts(pos, polys);
-			std::cout << "deduplicate complete." << std::endl;
+			auto deduplicate_end = std::chrono::high_resolution_clock::now();
+			elapsed = deduplicate_end - deduplicate_start;
+			std::cout << "deduplicate complete. Execution time: " << elapsed.count() << " ms" << std::endl << std::endl;
 			if (i == subdiv_times) {
 #ifdef DRAW
 				DrawableHexmesh<> newMesh(pos, polys);
@@ -610,8 +613,6 @@ namespace cinolib {
 				mesh = Hexmesh<>(pos, polys);
 				pos.clear();
 				polys.clear();
-				std::string tempPath = root + "/output/last_result.mesh";
-				mesh.save(tempPath.c_str());
 			}
 		}
 #ifdef OUTPUT
