@@ -20,8 +20,6 @@
 
 namespace cinolib {
 
-    // -------------------- 基础类型与工具 --------------------
-
     struct dvec3 {
         double x, y, z;
         __host__ __device__ dvec3() : x(0), y(0), z(0) {}
@@ -638,7 +636,7 @@ namespace cinolib {
 
         auto cuda_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = cuda_end - cuda_start;
-        cuda_elapsed += elapsed.count();
+        double patch_elapsed = elapsed.count();
 
         // ---- 回拷到主机 ----
         thrust::host_vector<dvec3> h_newPoly = d_newPoly;
@@ -681,8 +679,9 @@ namespace cinolib {
 
         cuda_end = std::chrono::high_resolution_clock::now();
         elapsed = cuda_end - cuda_start;
-        cuda_elapsed += elapsed.count();
-        std::cout << "execution time of current patch: " << elapsed.count() << " ms" << std::endl;
+        patch_elapsed += elapsed.count();
+        std::cout << "execution time of current patch: " << patch_elapsed << " ms" << std::endl;
+        cuda_elapsed += patch_elapsed;
 
         thrust::host_vector<uint> h_topo = d_topo;
         polys.reserve(polys.size() + h_topo.size());

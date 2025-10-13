@@ -35,18 +35,6 @@ namespace cinolib {
 		return mesh.poly_face_is_CCW(pid, fid);
 	}
 
-	// 8 元组哈希（用于 unordered_set）
-	struct Array8Hash {
-		std::size_t operator()(const std::array<unsigned int, 8>& a) const noexcept {
-			std::size_t h = 1469598103934665603ull; // FNV-like
-			for (int i = 0; i < 8; ++i) {
-				std::size_t x = static_cast<std::size_t>(a[i]);
-				h ^= x + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
-			}
-			return h;
-		}
-	};
-
 	struct Array3LLHash {
 		std::size_t operator()(const std::array<long long, 3>& a) const noexcept {
 			auto h0 = std::hash<long long>{}(a[0]);
@@ -62,11 +50,10 @@ namespace cinolib {
 	static inline double sqr(double v) { return v * v; }
 
 	void Patch::deduplicate_verts(std::vector<vec3d>& verts, std::vector<uint>& polys, double tol) {
-		// ===== 第一步：顶点去重 + 重映射 polys =====
 		assert(tol > 0.0 && !verts.empty());
 		const double inv_tol = 1.0 / tol;
 		const double tol2 = tol * tol;
-		// 栅格：key 为量化后的格子坐标；value 存该格子的“代表点”在 uniques 中的索引
+		// key 为量化后的格子坐标；value 存该格子的“代表点”在 uniques 中的索引
 		std::unordered_map<std::array<long long, 3>, std::vector<uint>, Array3LLHash> grid;
 		grid.reserve(verts.size() * 2);
 
@@ -75,7 +62,6 @@ namespace cinolib {
 		std::vector<uint> old2new(verts.size(), -1);
 
 		auto quantize = [&](const vec3d& p) {
-			// 用 llround 对边界更稳健
 			return std::array<long long, 3>{
 				static_cast<long long>(llround(p.x()* inv_tol)),
 					static_cast<long long>(llround(p.y()* inv_tol)),
@@ -123,35 +109,6 @@ namespace cinolib {
 			idx = old2new[idx];
 		}
 		verts.assign(uniques.begin(), uniques.end());
-
-		// ===== 第二步：hexa 去重（顺序无关：以“排序后的 8 元组”作为 key） =====
-		assert(polys.size() % 8 == 0 && "polys 长度必须是 8 的倍数");
-		const size_t m = polys.size();
-
-		std::unordered_set<std::array<unsigned int, 8>, Array8Hash> seen;
-		seen.reserve(m / 8 * 2);
-
-		std::vector<unsigned int> newPolys;
-		newPolys.reserve(m);
-
-		for (size_t k = 0; k < m; k += 8) {
-			// 原始顺序（为了保留第一次出现的写回时仍用原顺序）
-			std::array<unsigned int, 8> orig{
-				polys[k + 0], polys[k + 1], polys[k + 2], polys[k + 3],
-				polys[k + 4], polys[k + 5], polys[k + 6], polys[k + 7]
-			};
-
-			// 规范化 key：排序后的 8 元组（顺序无关）
-			std::array<unsigned int, 8> key = orig;
-			std::sort(key.begin(), key.end());
-
-			// 若该“集合”首次出现，则保留；否则丢弃
-			if (seen.insert(key).second) {
-				newPolys.insert(newPolys.end(), orig.begin(), orig.end());
-			}
-		}
-
-		polys.swap(newPolys);
 	}
 
 
@@ -569,19 +526,17 @@ namespace cinolib {
 		for (int i = 1; i <= subdiv_times; i++) {
 			cuda_elapsed = 0.0;
 			cpu_elapsed = 0.0;
-			uint num_clusters = std::min(int(mesh.num_polys() / MAX_POLYS_PER_CLUSTER + 1), MAX_CLUSTER);
+			uint num_clusters = std::min(int(mesh.num_polys() / MAX_POLYS_PER_CLUSTER) + 1, MAX_CLUSTER);
 
 			auto patching_start = std::chrono::high_resolution_clock::now();
 			patching(num_clusters);
 			auto patching_end = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double, std::milli> elapsed = patching_end - patching_start;
-			std::cout << "patching complete. Time cost: " << elapsed.count() << " ms" << std::endl;
-
+			std::cout << "patching complete. Execution time: " << elapsed.count() << " ms" << std::endl;
 			int temp = 0;
-			std::cout << "subdivision start." << std::endl;
 
 			for (singlePatch patch : patches) {
-				std::cout << "subdiving patch: " << temp++ << std::endl;
+				std::cout << "subdiving patch: " << temp++ << ", ";
 #ifdef USE_CUDA
 				patch.subdiv_cuda(pos, polys);
 #else
@@ -594,7 +549,7 @@ namespace cinolib {
 #ifdef USE_CUDA
 			std::cout << "subdivision complete. Execution time: " << cuda_elapsed << " ms" << std::endl;
 #else
-			std::cout << "subdivision complete. Execution time: " << cpu_elapsed << " ms\n" << std::endl;
+			std::cout << "subdivision complete. Execution time: " << cpu_elapsed << " ms" << std::endl;
 #endif
 			auto deduplicate_start = std::chrono::high_resolution_clock::now();
 			deduplicate_verts(pos, polys);

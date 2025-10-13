@@ -19,15 +19,15 @@
 #include <cstddef>
 
 #define USE_CUDA
-#define TEST
+//#define TEST
 //#define DRAW
 //#define DEBUG
 #define OUTPUT
 //#define DETAIL
 //#define OUTPUT_DETAIL
 
-#define MAX_POLYS_PER_CLUSTER 256
-#define MAX_CLUSTER 16
+#define MAX_POLYS_PER_CLUSTER 32768
+#define MAX_CLUSTER 1
 #define root std::string(DATA_PATH)
 
 namespace cinolib {
