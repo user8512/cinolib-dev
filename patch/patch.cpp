@@ -2,7 +2,6 @@
 #include "kmeans.h"
 #include <cinolib/gl/glcanvas.h>
 
-
 namespace cinolib {
 	float cuda_elapsed = 0.0;
 	float cpu_elapsed = 0.0;
@@ -53,7 +52,7 @@ namespace cinolib {
 		assert(tol > 0.0 && !verts.empty());
 		const double inv_tol = 1.0 / tol;
 		const double tol2 = tol * tol;
-		// key 为量化后的格子坐标；value 存该格子的“代表点”在 uniques 中的索引
+		//key 为量化后的格子坐标；value 存该格子的“代表点”在 uniques 中的索引
 		std::unordered_map<std::array<long long, 3>, std::vector<uint>, Array3LLHash> grid;
 		grid.reserve(verts.size() * 2);
 
@@ -533,10 +532,12 @@ namespace cinolib {
 			auto patching_end = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double, std::milli> elapsed = patching_end - patching_start;
 			std::cout << "patching complete. Execution time: " << elapsed.count() << " ms" << std::endl;
+			outlog << "patching complete. Execution time: " << elapsed.count() << " ms" << std::endl;
 			int temp = 0;
 
 			for (singlePatch patch : patches) {
-				std::cout << "subdiving patch: " << temp++ << ", ";
+				std::cout << "subdiving patch: " << temp << ", ";
+				outlog << "subdiving patch: " << temp++ << ", ";
 #ifdef USE_CUDA
 				patch.subdiv_cuda(pos, polys);
 #else
@@ -548,14 +549,17 @@ namespace cinolib {
 			}
 #ifdef USE_CUDA
 			std::cout << "subdivision complete. Execution time: " << cuda_elapsed << " ms" << std::endl;
+			outlog << "subdivision complete. Execution time: " << cuda_elapsed << " ms" << std::endl;
 #else
 			std::cout << "subdivision complete. Execution time: " << cpu_elapsed << " ms" << std::endl;
+			outlog << "subdivision complete. Execution time: " << cpu_elapsed << " ms" << std::endl;
 #endif
 			auto deduplicate_start = std::chrono::high_resolution_clock::now();
 			deduplicate_verts(pos, polys);
 			auto deduplicate_end = std::chrono::high_resolution_clock::now();
 			elapsed = deduplicate_end - deduplicate_start;
 			std::cout << "deduplicate complete. Execution time: " << elapsed.count() << " ms" << std::endl << std::endl;
+			outlog << "deduplicate complete. Execution time: " << elapsed.count() << " ms" << std::endl << std::endl;
 			if (i == subdiv_times) {
 #ifdef DRAW
 				DrawableHexmesh<> newMesh(pos, polys);

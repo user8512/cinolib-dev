@@ -19,16 +19,18 @@
 #include <cstddef>
 
 #define USE_CUDA
-//#define TEST
+#define TEST
 //#define DRAW
 //#define DEBUG
 #define OUTPUT
 //#define DETAIL
-//#define OUTPUT_DETAIL
+//#define OUTPUT_DETAIL_
 
 #define MAX_POLYS_PER_CLUSTER 32768
-#define MAX_CLUSTER 1
+#define MAX_CLUSTER 4
 #define root std::string(DATA_PATH)
+
+extern std::ofstream outlog;
 
 namespace cinolib {
 	extern float cuda_elapsed;

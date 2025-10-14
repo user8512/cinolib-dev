@@ -11,12 +11,22 @@ add_executable(${PROJECT_NAME}
     main.cpp
     patch.cpp
     kmeans.cpp
-    cc_subdiv_gpu.cu      
+    #cc_subdiv_gpu.cu
+    cc_subdiv_gpu_new.cu   
  )
  
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
+# 把运行期常见写入都导向 D 盘
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  VS_DEBUGGER_ENVIRONMENT
+    "TMP=D:/Temp\n\
+TEMP=D:/Temp\n\
+CUDA_CACHE_PATH=D:/CudaCache\n\
+__GL_SHADER_DISK_CACHE_PATH=D:/GLCache\n\
+_NT_SYMBOL_PATH=srv*D:/Symbols*https://msdl.microsoft.com/download/symbols"
 )
 
 set(cinolib_DIR "${PROJECT_SOURCE_DIR}/..")

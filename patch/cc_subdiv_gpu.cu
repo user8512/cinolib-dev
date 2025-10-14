@@ -681,6 +681,7 @@ namespace cinolib {
         elapsed = cuda_end - cuda_start;
         patch_elapsed += elapsed.count();
         std::cout << "execution time of current patch: " << patch_elapsed << " ms" << std::endl;
+        outlog << "execution time of current patch: " << patch_elapsed << " ms" << std::endl;
         cuda_elapsed += patch_elapsed;
 
         thrust::host_vector<uint> h_topo = d_topo;
